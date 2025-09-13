@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Furniture Floor Plan Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom style for better mobile experience */
+        .focusable-input:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px #3b82f6;
+        }
+        #interactive {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            overflow: hidden;
+            margin: 20px 0;
+            background-color: #333;
+            border-radius: 12px;
+        }
+        #interactive video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #scanner-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 2px;
+            background-color: red;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 5px rgba(255, 0, 0, 0.5); }
+            50% { box-shadow: 0 0 20px rgba(255, 0, 0, 1); }
+            100% { box-shadow: 0 0 5px rgba(255, 0, 0, 0.5); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto max-w-lg p-4 min-h-screen flex flex-col">
+        <header class="text-center my-6">
+            <h1 class="text-3xl font-bold text-slate-900">Floor Plan Tracker</h1>
+            <p class="text-slate-500 mt-2">Log furniture items and their tile locations.</p>
+        </header>
+
+        <div id="live-scanner-container" class="hidden fixed inset-0 bg-white bg-opacity-95 flex flex-col items-center justify-center z-50 backdrop-blur-sm">
+            <div class="bg-white p-6 rounded-2xl shadow-md w-full max-w-lg mx-auto">
+                <h2 class="text-2xl font-bold text-center mb-4">Scan Product Name</h2>
+                <div id="interactive">
+                    <video id="video-stream" autoplay playsinline></video>
+                    <div id="scanner-overlay"></div>
+                </div>
+                <div class="flex gap-4 mt-4">
+                    <button id="scanFrameBtn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all shadow-sm hover:shadow-md">
+                        Scan Frame
+                    </button>
+                    <button id="cancelScanBtn" class="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all shadow-sm hover:shadow-md">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+            <div id="ocr-loader-live" class="absolute inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50 backdrop-blur-sm hidden">
+                <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p id="loader-text-live" class="mt-4 text-slate-600 font-medium">Processing frame...</p>
+            </div>
+        </div>
+
+        <main class="bg-white p-6 rounded-2xl shadow-md flex-grow">
+            <div class="space-y-4">
+                <button id="scanTextBtn" class="w-full border-2 border-dashed border-slate-300 text-slate-500 font-semibold py-3 px-4 rounded-lg hover:bg-slate-100 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-camera"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    Scan Product Name
+                </button>
+
+                <div class="relative flex items-center justify-center">
+                    <hr class="w-full border-slate-200">
+                    <span class="absolute px-2 bg-white text-slate-400 text-sm">OR</span>
+                </div>
+
+                <div>
+                    <label for="productName" class="block text-sm font-medium text-slate-600 mb-1">Enter Product Name Manually</label>
+                    <input type="text" id="productName" placeholder="e.g., 'Cobar Coffee Table'" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow">
+                </div>
+                <div>
+                    <label for="tileLocation" class="block text-sm font-medium text-slate-600 mb-1">Tile Location</label>
+                    <input type="text" id="tileLocation" placeholder="e.g., 'FF03, FF04'" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow">
+                </div>
+                <button id="addItemBtn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all shadow-sm hover:shadow-md">
+                    Add Item
+                </button>
+            </div>
+
+            <hr class="my-6 border-slate-200">
+
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Logged Items</h2>
+                     <button id="exportBtn" class="bg-green-600 text-white text-sm font-medium py-2 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all shadow-sm hover:shadow-md disabled:bg-slate-400 disabled:cursor-not-allowed" disabled>
+                        Export to CSV
+                    </button>
+                </div>
+                <div id="itemList" class="space-y-2 max-h-96 overflow-y-auto pr-2">
+                    <p id="emptyMessage" class="text-center text-slate-500 py-4">No items added yet.</p>
+                </div>
+            </div>
+        </main>
+        
+        <footer class="text-center py-4 text-slate-400 text-sm mt-4">
+            <p>&copy; Michael's Floorplan Scanner</p>
+        </footer>
+
+    </div>
+
+    <script>
+        const productNameInput = document.getElementById('productName');
+        const tileLocationInput = document.getElementById('tileLocation');
+        const addItemBtn = document.getElementById('addItemBtn');
+        const itemListDiv = document.getElementById('itemList');
+        const exportBtn = document.getElementById('exportBtn');
+        const emptyMessage = document.getElementById('emptyMessage');
+        const scanTextBtn = document.getElementById('scanTextBtn');
+        const liveScannerContainer = document.getElementById('live-scanner-container');
+        const videoStream = document.getElementById('video-stream');
+        const cancelScanBtn = document.getElementById('cancelScanBtn');
+        const scanFrameBtn = document.getElementById('scanFrameBtn');
+        const ocrLoaderLive = document.getElementById('ocr-loader-live');
+        const loaderTextLive = document.getElementById('loader-text-live');
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        let worker;
+        let stream;
+
+        let items = JSON.parse(localStorage.getItem('floorPlanItems')) || [];
+
+        function renderItems() {
+            itemListDiv.innerHTML = '';
+            if (items.length === 0) {
+                emptyMessage.classList.remove('hidden');
+                exportBtn.disabled = true;
+            } else {
+                emptyMessage.classList.add('hidden');
+                exportBtn.disabled = false;
+                items.forEach((item, index) => {
+                    const itemElement = document.createElement('div');
+                    itemElement.className = 'bg-slate-100 p-4 rounded-lg flex justify-between items-center';
+                    itemElement.innerHTML = `
+                        <div>
+                            <p class="font-medium text-slate-800">${item.product}</p>
+                            <p class="text-sm text-slate-500">${item.location}</p>
+                        </div>
+                        <button onclick="removeItem(${index})" class="text-red-500 hover:text-red-700 font-semibold text-xl">&times;</button>
+                    `;
+                    itemListDiv.appendChild(itemElement);
+                });
+            }
+        }
+        
+        function addItem() {
+            const product = productNameInput.value.trim();
+            const location = tileLocationInput.value.trim();
+
+            if (product && location) {
+                items.push({ product, location });
+                localStorage.setItem('floorPlanItems', JSON.stringify(items));
+                
+                productNameInput.value = '';
+                tileLocationInput.value = '';
+                productNameInput.focus();
+                renderItems();
+            } else {
+                addItemBtn.textContent = 'Please fill out both fields!';
+                addItemBtn.classList.add('bg-red-500');
+                setTimeout(() => {
+                    addItemBtn.textContent = 'Add Item';
+                    addItemBtn.classList.remove('bg-red-500');
+                }, 1500);
+            }
+        }
+
+        function removeItem(index) {
+            items.splice(index, 1);
+            localStorage.setItem('floorPlanItems', JSON.stringify(items));
+            renderItems();
+        }
+        
+        function exportToCSV() {
+            const header = ['Product Name', 'Tile Location'];
+            const csv = items.map(item => `"${item.product}","${item.location}"`);
+            const csvContent = "data:text/csv;charset=utf-8," + header.join(',') + '\n' + csv.join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'floor_plan_data.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // --- Live Text Scanner Logic ---
+        async function startTextScanner() {
+            liveScannerContainer.classList.remove('hidden');
+            ocrLoaderLive.classList.remove('hidden');
+            loaderTextLive.textContent = 'Initializing camera...';
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                videoStream.srcObject = stream;
+                
+                videoStream.onloadedmetadata = () => {
+                    videoStream.play();
+                    canvas.width = videoStream.videoWidth;
+                    canvas.height = videoStream.videoHeight;
+                    ocrLoaderLive.classList.add('hidden');
+                };
+
+                worker = await Tesseract.createWorker('eng');
+            } catch (err) {
+                console.error("Camera access error:", err);
+                alert("Could not start camera. Please ensure the page is served over HTTPS and you have granted camera permissions.");
+                liveScannerContainer.classList.add('hidden');
+                if (worker) worker.terminate();
+            }
+        }
+
+        async function scanFrame() {
+            ocrLoaderLive.classList.remove('hidden');
+            loaderTextLive.textContent = 'Processing frame...';
+
+            try {
+                if (videoStream.readyState === videoStream.HAVE_ENOUGH_DATA) {
+                    context.drawImage(videoStream, 0, 0, canvas.width, canvas.height);
+                    
+                    const { data: { text } } = await worker.recognize(canvas);
+                    const cleanText = text.trim();
+
+                    if (cleanText.length > 5 && cleanText.match(/[a-zA-Z0-9]/)) {
+                        productNameInput.value = cleanText;
+                        stopTextScanner();
+                        tileLocationInput.focus();
+                    } else {
+                        loaderTextLive.textContent = 'Text not found. Please try again.';
+                        setTimeout(() => ocrLoaderLive.classList.add('hidden'), 1500);
+                    }
+                }
+            } catch (error) {
+                console.error("OCR Error:", error);
+                loaderTextLive.textContent = 'Scan failed. Please try again.';
+                setTimeout(() => ocrLoaderLive.classList.add('hidden'), 1500);
+            }
+        }
+
+        function stopTextScanner() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (worker) {
+                worker.terminate();
+            }
+            liveScannerContainer.classList.add('hidden');
+        }
+
+
+        addItemBtn.addEventListener('click', addItem);
+        exportBtn.addEventListener('click', exportToCSV);
+        scanTextBtn.addEventListener('click', startTextScanner);
+        scanFrameBtn.addEventListener('click', scanFrame);
+        cancelScanBtn.addEventListener('click', stopTextScanner);
+
+        // Initial render on page load
+        renderItems();
+    </script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch(err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+        });
+    }
+</script>
+</body>
+</html>
