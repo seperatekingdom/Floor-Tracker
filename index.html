@@ -13,7 +13,6 @@
         body {
             font-family: 'Inter', sans-serif;
         }
-        /* Custom style for better mobile experience */
         .focusable-input:focus {
             outline: none;
             box-shadow: 0 0 0 2px #3b82f6;
@@ -32,7 +31,6 @@
             height: 100%;
             object-fit: cover;
         }
-        /* --- MODIFIED --- Changed the line to a box for better ROI targeting */
         #scanner-overlay {
             position: absolute;
             top: 50%;
@@ -147,7 +145,7 @@
         const loaderTextLive = document.getElementById('loader-text-live');
 
         const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d', { willReadFrequently: true }); // Optimization for frequent getImageData
+        const context = canvas.getContext('2d', { willReadFrequently: true });
         let worker;
         let stream;
 
@@ -217,7 +215,6 @@
             document.body.removeChild(link);
         }
 
-        // --- Live Text Scanner Logic ---
         async function startTextScanner() {
             liveScannerContainer.classList.remove('hidden');
             ocrLoaderLive.classList.remove('hidden');
@@ -241,7 +238,7 @@
             }
         }
 
-        // --- MODIFIED --- Replaced with cropping and preprocessing logic
+        // --- ENHANCED SCANFRAME FUNCTION ---
         async function scanFrame() {
             ocrLoaderLive.classList.remove('hidden');
             loaderTextLive.textContent = 'Processing frame...';
@@ -252,46 +249,49 @@
                 const videoWidth = videoStream.videoWidth;
                 const videoHeight = videoStream.videoHeight;
                 
-                // --- 1. Define the Region of Interest (ROI) ---
-                // These percentages match the #scanner-overlay CSS
-                const roiWidth = videoWidth * 0.80; // 80% of the width
-                const roiHeight = videoHeight * 0.25; // 25% of the height
-                const roiX = (videoWidth - roiWidth) / 2; // Centered horizontally
-                const roiY = (videoHeight - roiHeight) / 2; // Centered vertically
+                const roiWidth = videoWidth * 0.80;
+                const roiHeight = videoHeight * 0.25;
+                const roiX = (videoWidth - roiWidth) / 2;
+                const roiY = (videoHeight - roiHeight) / 2;
 
-                // --- 2. Crop the image from the video stream ---
-                // We use the 9-argument version of drawImage to crop
                 canvas.width = roiWidth;
                 canvas.height = roiHeight;
-                context.drawImage(
-                    videoStream,       // source image
-                    roiX, roiY,        // source x, y
-                    roiWidth, roiHeight, // source width, height
-                    0, 0,              // destination x, y
-                    roiWidth, roiHeight  // destination width, height
-                );
+                context.drawImage(videoStream, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
 
-                // --- 3. Pre-process the cropped canvas ---
-                // This converts the image to grayscale and increases contrast, which helps Tesseract.
-                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-                const data = imageData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                    const color = avg > 128 ? 255 : 0; // Simple thresholding
-                    data[i] = color;     // red
-                    data[i + 1] = color; // green
-                    data[i + 2] = color; // blue
-                }
-                context.putImageData(imageData, 0, 0);
+                // CHANGE 1: Image Pre-processing
+                // Use a CSS-style filter for better contrast and grayscale conversion.
+                context.filter = 'contrast(160%) grayscale(100%)';
+                context.drawImage(canvas, 0, 0, roiWidth, roiHeight); // Redraw to apply filter
+                context.filter = 'none'; // Reset filter
 
-                // --- 4. Send ONLY the cropped & processed image to Tesseract ---
-                const { data: { text } } = await worker.recognize(canvas);
-                const cleanText = text.replace(/[^a-zA-Z0-9\s-]/g, '').trim(); // Clean up symbols
+                // CHANGE 2: Tesseract Configuration
+                // Whitelist characters to improve accuracy and speed.
+                const { data: { text } } = await worker.recognize(canvas, {}, {
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -'
+                });
 
-                if (cleanText.length > 3) {
-                    productNameInput.value = cleanText;
-                    stopTextScanner();
-                    tileLocationInput.focus();
+                // CHANGE 3: Post-processing and Validation
+                // Take only the first line of text and trim whitespace.
+                const firstLine = text.split('\n')[0].trim();
+                // Use a regex to find a plausible product name (e.g., 3-40 chars long).
+                const match = firstLine.match(/[A-Za-z0-9][A-Za-z0-9 -]{2,39}/);
+
+                if (match && match[0]) {
+                    const cleanText = match[0];
+
+                    // CHANGE 4: User Confirmation Loop
+                    // Ask the user to confirm the scan instead of auto-filling.
+                    const isConfirmed = confirm(`Scanned: "${cleanText}"\n\nIs this correct?`);
+
+                    if (isConfirmed) {
+                        productNameInput.value = cleanText;
+                        stopTextScanner();
+                        tileLocationInput.focus();
+                    } else {
+                        // User clicked 'Cancel', allow them to try again.
+                        loaderTextLive.textContent = 'Scan rejected. Please try again.';
+                        setTimeout(() => ocrLoaderLive.classList.add('hidden'), 1500);
+                    }
                 } else {
                     loaderTextLive.textContent = 'Text not found. Please try again.';
                     setTimeout(() => ocrLoaderLive.classList.add('hidden'), 1500);
@@ -321,7 +321,6 @@
         scanFrameBtn.addEventListener('click', scanFrame);
         cancelScanBtn.addEventListener('click', stopTextScanner);
 
-        // Initial render on page load
         renderItems();
     </script>
 <script>
