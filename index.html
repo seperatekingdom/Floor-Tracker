@@ -238,7 +238,7 @@
             }
         }
 
-        // --- ENHANCED SCANFRAME FUNCTION ---
+        // --- UPDATED SCANFRAME FUNCTION WITH SMART PRE-PROCESSING ---
         async function scanFrame() {
             ocrLoaderLive.classList.remove('hidden');
             loaderTextLive.textContent = 'Processing frame...';
@@ -258,29 +258,40 @@
                 canvas.height = roiHeight;
                 context.drawImage(videoStream, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
 
-                // CHANGE 1: Image Pre-processing
-                // Use a CSS-style filter for better contrast and grayscale conversion.
-                context.filter = 'contrast(160%) grayscale(100%)';
-                context.drawImage(canvas, 0, 0, roiWidth, roiHeight); // Redraw to apply filter
-                context.filter = 'none'; // Reset filter
+                // --- NEW: SMART PRE-PROCESSING LOGIC ---
+                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+                let darkPixels = 0;
+                
+                // 1. First pass: Convert to standard B&W and count dark pixels
+                for (let i = 0; i < data.length; i += 4) {
+                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                    const color = avg > 128 ? 255 : 0; // Standard B&W
+                    data[i] = data[i+1] = data[i+2] = color;
+                    if (color === 0) darkPixels++;
+                }
 
-                // CHANGE 2: Tesseract Configuration
-                // Whitelist characters to improve accuracy and speed.
+                // 2. Decide if inversion is needed.
+                // If more than half the pixels are dark, it's likely an inverted image (e.g., white text on dark background)
+                if (darkPixels > data.length / 8) { // (data.length is 4x the pixel count, so /8 is 1/2 of pixels)
+                    // 3. Second pass: Invert all pixels
+                    for (let i = 0; i < data.length; i += 4) {
+                        data[i] = data[i+1] = data[i+2] = (data[i] === 0 ? 255 : 0);
+                    }
+                }
+                
+                context.putImageData(imageData, 0, 0);
+                // --- END OF NEW LOGIC ---
+
                 const { data: { text } } = await worker.recognize(canvas, {}, {
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -'
                 });
 
-                // CHANGE 3: Post-processing and Validation
-                // Take only the first line of text and trim whitespace.
                 const firstLine = text.split('\n')[0].trim();
-                // Use a regex to find a plausible product name (e.g., 3-40 chars long).
                 const match = firstLine.match(/[A-Za-z0-9][A-Za-z0-9 -]{2,39}/);
 
                 if (match && match[0]) {
                     const cleanText = match[0];
-
-                    // CHANGE 4: User Confirmation Loop
-                    // Ask the user to confirm the scan instead of auto-filling.
                     const isConfirmed = confirm(`Scanned: "${cleanText}"\n\nIs this correct?`);
 
                     if (isConfirmed) {
@@ -288,7 +299,6 @@
                         stopTextScanner();
                         tileLocationInput.focus();
                     } else {
-                        // User clicked 'Cancel', allow them to try again.
                         loaderTextLive.textContent = 'Scan rejected. Please try again.';
                         setTimeout(() => ocrLoaderLive.classList.add('hidden'), 1500);
                     }
@@ -338,4 +348,3 @@
 </script>
 </body>
 </html>
-
