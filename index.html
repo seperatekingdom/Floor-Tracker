@@ -89,12 +89,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-camera"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
                     Scan Product Name
                 </button>
-
-                <div class="relative flex items-center justify-center">
-                    <hr class="w-full border-slate-200">
-                    <span class="absolute px-2 bg-white text-slate-400 text-sm">OR</span>
-                </div>
-
+                <div class="relative flex items-center justify-center"><hr class="w-full border-slate-200"><span class="absolute px-2 bg-white text-slate-400 text-sm">OR</span></div>
                 <div>
                     <label for="productName" class="block text-sm font-medium text-slate-600 mb-1">Enter Product Name Manually</label>
                     <input type="text" id="productName" placeholder="e.g., 'Cobar Coffee Table'" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow">
@@ -103,19 +98,13 @@
                     <label for="tileLocation" class="block text-sm font-medium text-slate-600 mb-1">Tile Location</label>
                     <input type="text" id="tileLocation" placeholder="e.g., 'FF03, FF04'" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow">
                 </div>
-                <button id="addItemBtn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all shadow-sm hover:shadow-md">
-                    Add Item
-                </button>
+                <button id="addItemBtn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all shadow-sm hover:shadow-md">Add Item</button>
             </div>
-
             <hr class="my-6 border-slate-200">
-
             <div>
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-semibold">Logged Items</h2>
-                     <button id="exportBtn" class="bg-green-600 text-white text-sm font-medium py-2 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all shadow-sm hover:shadow-md disabled:bg-slate-400 disabled:cursor-not-allowed" disabled>
-                        Export to CSV
-                    </button>
+                     <button id="exportBtn" class="bg-green-600 text-white text-sm font-medium py-2 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all shadow-sm hover:shadow-md disabled:bg-slate-400 disabled:cursor-not-allowed" disabled>Export to CSV</button>
                 </div>
                 <div id="itemList" class="space-y-2 max-h-96 overflow-y-auto pr-2">
                     <p id="emptyMessage" class="text-center text-slate-500 py-4">No items added yet.</p>
@@ -126,227 +115,320 @@
         <footer class="text-center py-4 text-slate-400 text-sm mt-4">
             <p>&copy; Michael's Floorplan Scanner</p>
         </footer>
-
     </div>
 
     <script>
-        const productNameInput = document.getElementById('productName');
-        const tileLocationInput = document.getElementById('tileLocation');
-        const addItemBtn = document.getElementById('addItemBtn');
-        const itemListDiv = document.getElementById('itemList');
-        const exportBtn = document.getElementById('exportBtn');
-        const emptyMessage = document.getElementById('emptyMessage');
-        const scanTextBtn = document.getElementById('scanTextBtn');
-        const liveScannerContainer = document.getElementById('live-scanner-container');
-        const videoStream = document.getElementById('video-stream');
-        const cancelScanBtn = document.getElementById('cancelScanBtn');
-        const scanFrameBtn = document.getElementById('scanFrameBtn');
-        const ocrLoaderLive = document.getElementById('ocr-loader-live');
-        const loaderTextLive = document.getElementById('loader-text-live');
+        /**
+         * Main application object to encapsulate all logic for the Floor Plan Tracker.
+         */
+        const FloorPlanTracker = {
+            state: {
+                items: [],
+                worker: null,
+                stream: null,
+                cvReady: false,
+            },
 
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d', { willReadFrequently: true });
-        let worker;
-        let stream;
+            dom: {
+                // Main UI
+                productNameInput: null,
+                tileLocationInput: null,
+                addItemBtn: null,
+                itemListDiv: null,
+                exportBtn: null,
+                emptyMessage: null,
+                // Scanner UI
+                scanTextBtn: null,
+                liveScannerContainer: null,
+                videoStream: null,
+                cancelScanBtn: null,
+                scanFrameBtn: null,
+                ocrLoaderLive: null,
+                loaderTextLive: null,
+            },
 
-        let items = JSON.parse(localStorage.getItem('floorPlanItems')) || [];
+            /**
+             * Initializes the application.
+             */
+            init() {
+                this.selectDOM();
+                this.bindEvents();
+                this.loadOpenCV();
+                this.itemManager.load();
+                this.itemManager.render();
+            },
 
-        function renderItems() {
-            itemListDiv.innerHTML = '';
-            if (items.length === 0) {
-                emptyMessage.classList.remove('hidden');
-                exportBtn.disabled = true;
-            } else {
-                emptyMessage.classList.add('hidden');
-                exportBtn.disabled = false;
-                items.forEach((item, index) => {
-                    const itemElement = document.createElement('div');
-                    itemElement.className = 'bg-slate-100 p-4 rounded-lg flex justify-between items-center';
-                    itemElement.innerHTML = `
-                        <div>
-                            <p class="font-medium text-slate-800">${item.product}</p>
-                            <p class="text-sm text-slate-500">${item.location}</p>
-                        </div>
-                        <button onclick="removeItem(${index})" class="text-red-500 hover:text-red-700 font-semibold text-xl">&times;</button>
-                    `;
-                    itemListDiv.appendChild(itemElement);
-                });
-            }
-        }
-        
-        function addItem() {
-            const product = productNameInput.value.trim();
-            const location = tileLocationInput.value.trim();
+            /**
+             * Selects all necessary DOM elements and stores them for easy access.
+             */
+            selectDOM() {
+                const D = this.dom; // Shorthand
+                D.productNameInput = document.getElementById('productName');
+                D.tileLocationInput = document.getElementById('tileLocation');
+                D.addItemBtn = document.getElementById('addItemBtn');
+                D.itemListDiv = document.getElementById('itemList');
+                D.exportBtn = document.getElementById('exportBtn');
+                D.emptyMessage = document.getElementById('emptyMessage');
+                D.scanTextBtn = document.getElementById('scanTextBtn');
+                D.liveScannerContainer = document.getElementById('live-scanner-container');
+                D.videoStream = document.getElementById('video-stream');
+                D.cancelScanBtn = document.getElementById('cancelScanBtn');
+                D.scanFrameBtn = document.getElementById('scanFrameBtn');
+                D.ocrLoaderLive = document.getElementById('ocr-loader-live');
+                D.loaderTextLive = document.getElementById('loader-text-live');
+            },
+            
+            /**
+             * Binds all event listeners for the application.
+             */
+            bindEvents() {
+                this.dom.addItemBtn.addEventListener('click', () => this.itemManager.add());
+                this.dom.exportBtn.addEventListener('click', () => this.itemManager.exportToCSV());
+                this.dom.scanTextBtn.addEventListener('click', () => this.scanner.start());
+                this.dom.scanFrameBtn.addEventListener('click', () => this.scanner.scanFrame());
+                this.dom.cancelScanBtn.addEventListener('click', () => this.scanner.stop());
+            },
 
-            if (product && location) {
-                items.push({ product, location });
-                localStorage.setItem('floorPlanItems', JSON.stringify(items));
-                
-                productNameInput.value = '';
-                tileLocationInput.value = '';
-                productNameInput.focus();
-                renderItems();
-            } else {
-                addItemBtn.textContent = 'Please fill out both fields!';
-                addItemBtn.classList.add('bg-red-500');
-                setTimeout(() => {
-                    addItemBtn.textContent = 'Add Item';
-                    addItemBtn.classList.remove('bg-red-500');
-                }, 1500);
-            }
-        }
-
-        function removeItem(index) {
-            items.splice(index, 1);
-            localStorage.setItem('floorPlanItems', JSON.stringify(items));
-            renderItems();
-        }
-        
-        function exportToCSV() {
-            const header = ['Product Name', 'Tile Location'];
-            const csv = items.map(item => `"${item.product}","${item.location}"`);
-            const csvContent = "data:text/csv;charset=utf-8," + header.join(',') + '\n' + csv.join('\n');
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement('a');
-            link.setAttribute('href', encodedUri);
-            link.setAttribute('download', 'floor_plan_data.csv');
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-
-        async function startTextScanner() {
-            liveScannerContainer.classList.remove('hidden');
-            ocrLoaderLive.classList.remove('hidden');
-            loaderTextLive.textContent = 'Initializing camera...';
-
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                videoStream.srcObject = stream;
-                
-                videoStream.onloadedmetadata = () => {
-                    videoStream.play();
-                    ocrLoaderLive.classList.add('hidden');
+            /**
+             * Loads the OpenCV.js script programmatically.
+             */
+            loadOpenCV() {
+                const script = document.createElement('script');
+                script.src = 'https://docs.opencv.org/4.9.0/opencv.js';
+                script.async = true;
+                script.onload = () => {
+                    this.state.cvReady = true;
+                    console.log("OpenCV.js is ready.");
                 };
+                script.onerror = () => {
+                    console.error("Failed to load OpenCV.js");
+                    alert("Critical error: Image processing library failed to load. Please refresh the page.");
+                };
+                document.head.appendChild(script);
+            },
 
-                worker = await Tesseract.createWorker('eng');
-            } catch (err) {
-                console.error("Camera access error:", err);
-                alert("Could not start camera. Please ensure the page is served over HTTPS and you have granted camera permissions.");
-                liveScannerContainer.classList.add('hidden');
-                if (worker) worker.terminate();
-            }
-        }
+            // --- UI Management Module ---
+            ui: {
+                showLoader(message) {
+                    FloorPlanTracker.dom.loaderTextLive.textContent = message;
+                    FloorPlanTracker.dom.ocrLoaderLive.classList.remove('hidden');
+                },
+                hideLoader() {
+                    FloorPlanTracker.dom.ocrLoaderLive.classList.add('hidden');
+                },
+                showScanner() {
+                    FloorPlanTracker.dom.liveScannerContainer.classList.remove('hidden');
+                },
+                hideScanner() {
+                    FloorPlanTracker.dom.liveScannerContainer.classList.add('hidden');
+                },
+            },
 
-        // --- UPDATED SCANFRAME FUNCTION WITH SMART PRE-PROCESSING ---
-        async function scanFrame() {
-            ocrLoaderLive.classList.remove('hidden');
-            loaderTextLive.textContent = 'Processing frame...';
-
-            try {
-                if (videoStream.readyState !== videoStream.HAVE_ENOUGH_DATA) return;
-
-                const videoWidth = videoStream.videoWidth;
-                const videoHeight = videoStream.videoHeight;
-                
-                const roiWidth = videoWidth * 0.30;
-                const roiHeight = videoHeight * 0.10;
-                const roiX = (videoWidth - roiWidth) / 2;
-                const roiY = (videoHeight - roiHeight) / 2;
-
-                canvas.width = roiWidth;
-                canvas.height = roiHeight;
-                context.drawImage(videoStream, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
-
-                // --- NEW: SMART PRE-PROCESSING LOGIC ---
-                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-                const data = imageData.data;
-                let darkPixels = 0;
-                
-                // 1. First pass: Convert to standard B&W and count dark pixels
-                for (let i = 0; i < data.length; i += 4) {
-                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                    const color = avg > 128 ? 255 : 0; // Standard B&W
-                    data[i] = data[i+1] = data[i+2] = color;
-                    if (color === 0) darkPixels++;
-                }
-
-                // 2. Decide if inversion is needed.
-                // If more than half the pixels are dark, it's likely an inverted image (e.g., white text on dark background)
-                if (darkPixels > data.length / 8) { // (data.length is 4x the pixel count, so /8 is 1/2 of pixels)
-                    // 3. Second pass: Invert all pixels
-                    for (let i = 0; i < data.length; i += 4) {
-                        data[i] = data[i+1] = data[i+2] = (data[i] === 0 ? 255 : 0);
-                    }
-                }
-                
-                context.putImageData(imageData, 0, 0);
-                // --- END OF NEW LOGIC ---
-
-                const { data: { text } } = await worker.recognize(canvas, {}, {
-                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -'
-                });
-
-                const firstLine = text.split('\n')[0].trim();
-                const match = firstLine.match(/[A-Za-z0-9][A-Za-z0-9 -]{2,39}/);
-
-                if (match && match[0]) {
-                    const cleanText = match[0];
-                    const isConfirmed = confirm(`Scanned: "${cleanText}"\n\nIs this correct?`);
-
-                    if (isConfirmed) {
-                        productNameInput.value = cleanText;
-                        stopTextScanner();
-                        tileLocationInput.focus();
+            // --- Item Management Module ---
+            itemManager: {
+                load() {
+                    FloorPlanTracker.state.items = JSON.parse(localStorage.getItem('floorPlanItems')) || [];
+                },
+                save() {
+                    localStorage.setItem('floorPlanItems', JSON.stringify(FloorPlanTracker.state.items));
+                },
+                render() {
+                    const { items } = FloorPlanTracker.state;
+                    const { itemListDiv, emptyMessage, exportBtn } = FloorPlanTracker.dom;
+                    
+                    itemListDiv.innerHTML = '';
+                    
+                    if (items.length === 0) {
+                        emptyMessage.classList.remove('hidden');
+                        exportBtn.disabled = true;
                     } else {
-                        loaderTextLive.textContent = 'Scan rejected. Please try again.';
-                        setTimeout(() => ocrLoaderLive.classList.add('hidden'), 1500);
+                        emptyMessage.classList.add('hidden');
+                        exportBtn.disabled = false;
+                        items.forEach((item, index) => {
+                            const itemElement = document.createElement('div');
+                            itemElement.className = 'bg-slate-100 p-4 rounded-lg flex justify-between items-center';
+                            itemElement.innerHTML = `
+                                <div>
+                                    <p class="font-medium text-slate-800">${item.product}</p>
+                                    <p class="text-sm text-slate-500">${item.location}</p>
+                                </div>
+                                <button onclick="FloorPlanTracker.itemManager.remove(${index})" class="text-red-500 hover:text-red-700 font-semibold text-xl">&times;</button>
+                            `;
+                            itemListDiv.appendChild(itemElement);
+                        });
                     }
-                } else {
-                    loaderTextLive.textContent = 'Text not found. Please try again.';
-                    setTimeout(() => ocrLoaderLive.classList.add('hidden'), 1500);
+                },
+                add() {
+                    const { productNameInput, tileLocationInput, addItemBtn } = FloorPlanTracker.dom;
+                    const product = productNameInput.value.trim();
+                    const location = tileLocationInput.value.trim();
+
+                    if (product && location) {
+                        FloorPlanTracker.state.items.push({ product, location });
+                        this.save();
+                        this.render();
+                        productNameInput.value = '';
+                        tileLocationInput.value = '';
+                        productNameInput.focus();
+                    } else {
+                        addItemBtn.textContent = 'Please fill out both fields!';
+                        addItemBtn.classList.add('bg-red-500');
+                        setTimeout(() => {
+                            addItemBtn.textContent = 'Add Item';
+                            addItemBtn.classList.remove('bg-red-500');
+                        }, 1500);
+                    }
+                },
+                remove(index) {
+                    FloorPlanTracker.state.items.splice(index, 1);
+                    this.save();
+                    this.render();
+                },
+                exportToCSV() {
+                    const header = ['Product Name', 'Tile Location'];
+                    const csv = FloorPlanTracker.state.items.map(item => `"${item.product}","${item.location}"`);
+                    const csvContent = "data:text/csv;charset=utf-8," + header.join(',') + '\n' + csv.join('\n');
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement('a');
+                    link.setAttribute('href', encodedUri);
+                    link.setAttribute('download', 'floor_plan_data.csv');
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
                 }
+            },
 
-            } catch (error) {
-                console.error("OCR Error:", error);
-                loaderTextLive.textContent = 'Scan failed. Please try again.';
-                setTimeout(() => ocrLoaderLive.classList.add('hidden'), 1500);
+            // --- Scanner Module ---
+            scanner: {
+                async start() {
+                    const FPT = FloorPlanTracker; // Shorthand
+                    FPT.ui.showScanner();
+                    FPT.ui.showLoader('Initializing...');
+
+                    try {
+                        if (!FPT.state.cvReady) {
+                            FPT.ui.showLoader('Loading image libraries...');
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                            if (!FPT.state.cvReady) throw new Error("OpenCV.js failed to load.");
+                        }
+                        
+                        FPT.ui.showLoader('Initializing camera...');
+                        FPT.state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                        FPT.dom.videoStream.srcObject = FPT.state.stream;
+                        
+                        FPT.dom.videoStream.onloadedmetadata = () => {
+                            FPT.dom.videoStream.play();
+                            FPT.ui.hideLoader();
+                        };
+
+                        if (!FPT.state.worker) {
+                           FPT.state.worker = await Tesseract.createWorker('eng');
+                        }
+                    } catch (err) {
+                        console.error("Scanner failed to start:", err);
+                        alert("Could not start scanner. Please ensure camera permissions are granted and refresh the page.");
+                        this.stop();
+                    }
+                },
+                stop() {
+                    const FPT = FloorPlanTracker;
+                    if (FPT.state.stream) {
+                        FPT.state.stream.getTracks().forEach(track => track.stop());
+                        FPT.state.stream = null;
+                    }
+                    if (FPT.state.worker) {
+                        FPT.state.worker.terminate();
+                        FPT.state.worker = null;
+                    }
+                    FPT.ui.hideScanner();
+                },
+                async scanFrame() {
+                    const FPT = FloorPlanTracker;
+                    if (!FPT.state.cvReady) {
+                        alert("Image processing library not ready. Please wait.");
+                        return;
+                    }
+                    
+                    FPT.ui.showLoader('Processing frame...');
+
+                    const canvas = document.createElement('canvas');
+                    let src = null;
+                    let dst = null;
+
+                    try {
+                        const video = FPT.dom.videoStream;
+                        if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+                        const roiWidth = video.videoWidth * 0.30;
+                        const roiHeight = video.videoHeight * 0.10;
+                        const roiX = (video.videoWidth - roiWidth) / 2;
+                        const roiY = (video.videoHeight - roiHeight) / 2;
+
+                        canvas.width = roiWidth;
+                        canvas.height = roiHeight;
+                        canvas.getContext('2d').drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
+
+                        // Use OpenCV for superior image processing
+                        src = cv.imread(canvas);
+                        dst = new cv.Mat();
+                        cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
+                        cv.adaptiveThreshold(dst, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+                        cv.imshow(canvas, dst);
+                        
+                        const { data: { text } } = await FPT.state.worker.recognize(canvas, {}, {
+                            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -',
+                            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE 
+                        });
+
+                        const firstLine = text.split('\n')[0].trim();
+                        const match = firstLine.match(/[A-Za-z0-9][A-Za-z0-9 -]{2,39}/);
+
+                        if (match && match[0]) {
+                            FPT.ui.hideLoader(); // Hide loader before confirm dialog
+                            const cleanText = match[0];
+                            const isConfirmed = confirm(`Scanned: "${cleanText}"\n\nIs this correct?`);
+
+                            if (isConfirmed) {
+                                FPT.dom.productNameInput.value = cleanText;
+                                this.stop();
+                                FPT.dom.tileLocationInput.focus();
+                            } else {
+                                FPT.ui.showLoader('Scan rejected. Try again.');
+                                setTimeout(() => FPT.ui.hideLoader(), 1500);
+                            }
+                        } else {
+                            FPT.ui.showLoader('Text not found. Try again.');
+                            setTimeout(() => FPT.ui.hideLoader(), 1500);
+                        }
+                    } catch (error) {
+                        console.error("OCR Error:", error);
+                        FPT.ui.showLoader('Scan failed. Please try again.');
+                        setTimeout(() => FPT.ui.hideLoader(), 1500);
+                    } finally {
+                        if (src) src.delete();
+                        if (dst) dst.delete();
+                    }
+                }
             }
-        }
+        };
 
-        function stopTextScanner() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            if (worker) {
-                worker.terminate();
-            }
-            liveScannerContainer.classList.add('hidden');
-        }
-
-
-        addItemBtn.addEventListener('click', addItem);
-        exportBtn.addEventListener('click', exportToCSV);
-        scanTextBtn.addEventListener('click', startTextScanner);
-        scanFrameBtn.addEventListener('click', scanFrame);
-        cancelScanBtn.addEventListener('click', stopTextScanner);
-
-        renderItems();
+        // Start the application once the DOM is fully loaded.
+        window.addEventListener('DOMContentLoaded', () => FloorPlanTracker.init());
+        
     </script>
-<script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js')
-                .then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                })
-                .catch(err => {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
-        });
-    }
-</script>
+    <script>
+        // Service Worker registration (kept separate for clarity)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+    </script>
 </body>
 </html>
-
-
