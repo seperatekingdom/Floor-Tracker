@@ -8,41 +8,14 @@
     <title>Furniture Floor Plan Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <script async src="https://docs.opencv.org/4.9.0/opencv.js" onload="FloorPlanTracker.onCvReady()"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        .focusable-input:focus {
-            outline: none;
-            box-shadow: 0 0 0 2px #3b82f6;
-        }
-        #interactive {
-            position: relative;
-            width: 100%;
-            height: 300px;
-            overflow: hidden;
-            margin: 20px 0;
-            background-color: #333;
-            border-radius: 12px;
-        }
-        #interactive video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        #scanner-overlay {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 30%;
-            height: 10%;
-            border: 2px solid red;
-            border-radius: 8px;
-            box-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
-            animation: pulse 1.5s infinite;
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .focusable-input:focus { outline: none; box-shadow: 0 0 0 2px #3b82f6; }
+        #interactive { position: relative; width: 100%; height: 300px; overflow: hidden; margin: 20px 0; background-color: #333; border-radius: 12px; }
+        #interactive video { width: 100%; height: 100%; object-fit: cover; }
+        #scanner-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 30%; height: 10%; border: 2px solid red; border-radius: 8px; box-shadow: 0 0 15px rgba(255, 0, 0, 0.7); animation: pulse 1.5s infinite; }
         @keyframes pulse {
             0% { box-shadow: 0 0 5px rgba(255, 0, 0, 0.5); }
             50% { box-shadow: 0 0 20px rgba(255, 0, 0, 1); }
@@ -66,19 +39,17 @@
                     <div id="scanner-overlay"></div>
                 </div>
                 <div class="flex gap-4 mt-4">
-                    <button id="scanFrameBtn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all shadow-sm hover:shadow-md">
-                        Scan Frame
-                    </button>
-                    <button id="cancelScanBtn" class="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all shadow-sm hover:shadow-md">
-                        Cancel
-                    </button>
+                    <button id="scanFrameBtn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700">Scan Frame</button>
+                    <button id="debugFrameBtn" class="w-full bg-orange-500 text-white font-semibold py-3 px-4 rounded-lg hover:bg-orange-600">Debug Frame</button>
+                    <button id="cancelScanBtn" class="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-red-700">Cancel</button>
+                </div>
+                <div class="mt-4 text-center">
+                    <p class="text-sm text-slate-500">Debug Preview:</p>
+                    <img id="debug-preview" class="mt-2 border-2 border-slate-300 mx-auto" style="display: none; max-width: 100%;">
                 </div>
             </div>
             <div id="ocr-loader-live" class="absolute inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50 backdrop-blur-sm hidden">
-                <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 <p id="loader-text-live" class="mt-4 text-slate-600 font-medium">Processing frame...</p>
             </div>
         </div>
@@ -118,143 +89,89 @@
     </div>
 
     <script>
-        /**
-         * Main application object to encapsulate all logic for the Floor Plan Tracker.
-         */
         const FloorPlanTracker = {
             state: {
-                items: [],
-                worker: null,
-                stream: null,
-                cvReady: false,
+                items: [], worker: null, stream: null, cvReady: false,
             },
+            config: {
+                // --- Tweak these values to improve recognition ---
+                opencv: {
+                    //blockSize: The size of the area to calculate the threshold for. Must be an odd number.
+                    //Increase if lighting is very uneven. Try values like 11, 15, 21, 25.
+                    blockSize: 15,
 
+                    //C: A constant subtracted from the mean. A "fudge factor".
+                    //Increase if letters are too thick or merging. Try values like 2, 5, 7.
+                    C: 5,
+                },
+                tesseract: {
+                    //Engine Mode: Try different OCR models.
+                    //Tesseract.OEM.LSTM_ONLY (modern AI) is the default and usually best.
+                    //Tesseract.OEM.TESSERACT_ONLY (legacy) can sometimes work better on noisy images.
+                    //Tesseract.OEM.TESSERACT_LSTM_COMBINED tries both.
+                    engineMode: Tesseract.OEM.LSTM_ONLY,
+                }
+            },
             dom: {
-                // Main UI
-                productNameInput: null,
-                tileLocationInput: null,
-                addItemBtn: null,
-                itemListDiv: null,
-                exportBtn: null,
-                emptyMessage: null,
-                // Scanner UI
-                scanTextBtn: null,
-                liveScannerContainer: null,
-                videoStream: null,
-                cancelScanBtn: null,
-                scanFrameBtn: null,
-                ocrLoaderLive: null,
-                loaderTextLive: null,
+                productNameInput: null, tileLocationInput: null, addItemBtn: null, itemListDiv: null, exportBtn: null, emptyMessage: null,
+                scanTextBtn: null, liveScannerContainer: null, videoStream: null, cancelScanBtn: null, scanFrameBtn: null, ocrLoaderLive: null, loaderTextLive: null,
+                debugFrameBtn: null, debugPreview: null,
             },
-
-            /**
-             * Initializes the application.
-             */
             init() {
                 this.selectDOM();
                 this.bindEvents();
-                this.loadOpenCV();
                 this.itemManager.load();
                 this.itemManager.render();
             },
-
-            /**
-             * Selects all necessary DOM elements and stores them for easy access.
-             */
-            selectDOM() {
-                const D = this.dom; // Shorthand
-                D.productNameInput = document.getElementById('productName');
-                D.tileLocationInput = document.getElementById('tileLocation');
-                D.addItemBtn = document.getElementById('addItemBtn');
-                D.itemListDiv = document.getElementById('itemList');
-                D.exportBtn = document.getElementById('exportBtn');
-                D.emptyMessage = document.getElementById('emptyMessage');
-                D.scanTextBtn = document.getElementById('scanTextBtn');
-                D.liveScannerContainer = document.getElementById('live-scanner-container');
-                D.videoStream = document.getElementById('video-stream');
-                D.cancelScanBtn = document.getElementById('cancelScanBtn');
-                D.scanFrameBtn = document.getElementById('scanFrameBtn');
-                D.ocrLoaderLive = document.getElementById('ocr-loader-live');
-                D.loaderTextLive = document.getElementById('loader-text-live');
+            onCvReady() {
+                if (window.cv) {
+                    console.log("OpenCV.js is ready.");
+                    this.state.cvReady = true;
+                } else {
+                    console.error("OpenCV.js failed to load.");
+                    alert("Critical error: Image processing library failed to load. Please refresh the page.");
+                }
             },
-            
-            /**
-             * Binds all event listeners for the application.
-             */
+            selectDOM() {
+                const D = this.dom;
+                for (const key in D) {
+                    if (Object.hasOwnProperty.call(D, key)) {
+                         // Convert camelCase key to kebab-case for getElementById
+                        const id = key.replace(/([A-Z])/g, "-$1").toLowerCase();
+                        D[key] = document.getElementById(id);
+                    }
+                }
+            },
             bindEvents() {
                 this.dom.addItemBtn.addEventListener('click', () => this.itemManager.add());
                 this.dom.exportBtn.addEventListener('click', () => this.itemManager.exportToCSV());
                 this.dom.scanTextBtn.addEventListener('click', () => this.scanner.start());
                 this.dom.scanFrameBtn.addEventListener('click', () => this.scanner.scanFrame());
                 this.dom.cancelScanBtn.addEventListener('click', () => this.scanner.stop());
+                this.dom.debugFrameBtn.addEventListener('click', () => this.scanner.debugFrame());
             },
-
-            /**
-             * Loads the OpenCV.js script programmatically.
-             */
-            loadOpenCV() {
-                const script = document.createElement('script');
-                script.src = 'https://docs.opencv.org/4.9.0/opencv.js';
-                script.async = true;
-                script.onload = () => {
-                    this.state.cvReady = true;
-                    console.log("OpenCV.js is ready.");
-                };
-                script.onerror = () => {
-                    console.error("Failed to load OpenCV.js");
-                    alert("Critical error: Image processing library failed to load. Please refresh the page.");
-                };
-                document.head.appendChild(script);
-            },
-
-            // --- UI Management Module ---
             ui: {
-                showLoader(message) {
-                    FloorPlanTracker.dom.loaderTextLive.textContent = message;
-                    FloorPlanTracker.dom.ocrLoaderLive.classList.remove('hidden');
-                },
-                hideLoader() {
-                    FloorPlanTracker.dom.ocrLoaderLive.classList.add('hidden');
-                },
-                showScanner() {
-                    FloorPlanTracker.dom.liveScannerContainer.classList.remove('hidden');
-                },
-                hideScanner() {
-                    FloorPlanTracker.dom.liveScannerContainer.classList.add('hidden');
-                },
+                showLoader(message) { FloorPlanTracker.dom.loaderTextLive.textContent = message; FloorPlanTracker.dom.ocrLoaderLive.classList.remove('hidden'); },
+                hideLoader() { FloorPlanTracker.dom.ocrLoaderLive.classList.add('hidden'); },
+                showScanner() { FloorPlanTracker.dom.liveScannerContainer.classList.remove('hidden'); },
+                hideScanner() { FloorPlanTracker.dom.liveScannerContainer.classList.add('hidden'); },
             },
-
-            // --- Item Management Module ---
             itemManager: {
-                load() {
-                    FloorPlanTracker.state.items = JSON.parse(localStorage.getItem('floorPlanItems')) || [];
-                },
-                save() {
-                    localStorage.setItem('floorPlanItems', JSON.stringify(FloorPlanTracker.state.items));
-                },
+                load() { FloorPlanTracker.state.items = JSON.parse(localStorage.getItem('floorPlanItems')) || []; },
+                save() { localStorage.setItem('floorPlanItems', JSON.stringify(FloorPlanTracker.state.items)); },
                 render() {
                     const { items } = FloorPlanTracker.state;
                     const { itemListDiv, emptyMessage, exportBtn } = FloorPlanTracker.dom;
-                    
                     itemListDiv.innerHTML = '';
-                    
                     if (items.length === 0) {
-                        emptyMessage.classList.remove('hidden');
-                        exportBtn.disabled = true;
+                        emptyMessage.classList.remove('hidden'); exportBtn.disabled = true;
                     } else {
-                        emptyMessage.classList.add('hidden');
-                        exportBtn.disabled = false;
+                        emptyMessage.classList.add('hidden'); exportBtn.disabled = false;
                         items.forEach((item, index) => {
-                            const itemElement = document.createElement('div');
-                            itemElement.className = 'bg-slate-100 p-4 rounded-lg flex justify-between items-center';
-                            itemElement.innerHTML = `
-                                <div>
-                                    <p class="font-medium text-slate-800">${item.product}</p>
-                                    <p class="text-sm text-slate-500">${item.location}</p>
-                                </div>
-                                <button onclick="FloorPlanTracker.itemManager.remove(${index})" class="text-red-500 hover:text-red-700 font-semibold text-xl">&times;</button>
-                            `;
-                            itemListDiv.appendChild(itemElement);
+                            const el = document.createElement('div');
+                            el.className = 'bg-slate-100 p-4 rounded-lg flex justify-between items-center';
+                            el.innerHTML = `<div><p class="font-medium text-slate-800">${item.product}</p><p class="text-sm text-slate-500">${item.location}</p></div><button onclick="FloorPlanTracker.itemManager.remove(${index})" class="text-red-500 hover:text-red-700 font-semibold text-xl">&times;</button>`;
+                            itemListDiv.appendChild(el);
                         });
                     }
                 },
@@ -262,68 +179,42 @@
                     const { productNameInput, tileLocationInput, addItemBtn } = FloorPlanTracker.dom;
                     const product = productNameInput.value.trim();
                     const location = tileLocationInput.value.trim();
-
                     if (product && location) {
                         FloorPlanTracker.state.items.push({ product, location });
-                        this.save();
-                        this.render();
-                        productNameInput.value = '';
-                        tileLocationInput.value = '';
-                        productNameInput.focus();
+                        this.save(); this.render();
+                        productNameInput.value = ''; tileLocationInput.value = ''; productNameInput.focus();
                     } else {
-                        addItemBtn.textContent = 'Please fill out both fields!';
-                        addItemBtn.classList.add('bg-red-500');
-                        setTimeout(() => {
-                            addItemBtn.textContent = 'Add Item';
-                            addItemBtn.classList.remove('bg-red-500');
-                        }, 1500);
+                        addItemBtn.textContent = 'Please fill out both fields!'; addItemBtn.classList.add('bg-red-500');
+                        setTimeout(() => { addItemBtn.textContent = 'Add Item'; addItemBtn.classList.remove('bg-red-500'); }, 1500);
                     }
                 },
-                remove(index) {
-                    FloorPlanTracker.state.items.splice(index, 1);
-                    this.save();
-                    this.render();
-                },
+                remove(index) { FloorPlanTracker.state.items.splice(index, 1); this.save(); this.render(); },
                 exportToCSV() {
                     const header = ['Product Name', 'Tile Location'];
                     const csv = FloorPlanTracker.state.items.map(item => `"${item.product}","${item.location}"`);
                     const csvContent = "data:text/csv;charset=utf-8," + header.join(',') + '\n' + csv.join('\n');
-                    const encodedUri = encodeURI(csvContent);
                     const link = document.createElement('a');
-                    link.setAttribute('href', encodedUri);
+                    link.setAttribute('href', encodeURI(csvContent));
                     link.setAttribute('download', 'floor_plan_data.csv');
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
+                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
                 }
             },
-
-            // --- Scanner Module ---
             scanner: {
                 async start() {
-                    const FPT = FloorPlanTracker; // Shorthand
+                    const FPT = FloorPlanTracker;
                     FPT.ui.showScanner();
                     FPT.ui.showLoader('Initializing...');
-
                     try {
                         if (!FPT.state.cvReady) {
                             FPT.ui.showLoader('Loading image libraries...');
                             await new Promise(resolve => setTimeout(resolve, 2000));
                             if (!FPT.state.cvReady) throw new Error("OpenCV.js failed to load.");
                         }
-                        
                         FPT.ui.showLoader('Initializing camera...');
                         FPT.state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                         FPT.dom.videoStream.srcObject = FPT.state.stream;
-                        
-                        FPT.dom.videoStream.onloadedmetadata = () => {
-                            FPT.dom.videoStream.play();
-                            FPT.ui.hideLoader();
-                        };
-
-                        if (!FPT.state.worker) {
-                           FPT.state.worker = await Tesseract.createWorker('eng');
-                        }
+                        FPT.dom.videoStream.onloadedmetadata = () => { FPT.dom.videoStream.play(); FPT.ui.hideLoader(); };
+                        if (!FPT.state.worker) { FPT.state.worker = await Tesseract.createWorker('eng'); }
                     } catch (err) {
                         console.error("Scanner failed to start:", err);
                         alert("Could not start scanner. Please ensure camera permissions are granted and refresh the page.");
@@ -332,101 +223,77 @@
                 },
                 stop() {
                     const FPT = FloorPlanTracker;
-                    if (FPT.state.stream) {
-                        FPT.state.stream.getTracks().forEach(track => track.stop());
-                        FPT.state.stream = null;
-                    }
-                    if (FPT.state.worker) {
-                        FPT.state.worker.terminate();
-                        FPT.state.worker = null;
-                    }
+                    if (FPT.state.stream) { FPT.state.stream.getTracks().forEach(track => track.stop()); FPT.state.stream = null; }
+                    if (FPT.state.worker) { FPT.state.worker.terminate(); FPT.state.worker = null; }
                     FPT.ui.hideScanner();
+                },
+                _processFrame(canvas) {
+                    const FPT = FloorPlanTracker;
+                    const video = FPT.dom.videoStream;
+                    const roiWidth = video.videoWidth * 0.30; const roiHeight = video.videoHeight * 0.10;
+                    const roiX = (video.videoWidth - roiWidth) / 2; const roiY = (video.videoHeight - roiHeight) / 2;
+                    canvas.width = roiWidth; canvas.height = roiHeight;
+                    canvas.getContext('2d').drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
+                    
+                    let src = cv.imread(canvas); let dst = new cv.Mat();
+                    cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
+                    cv.adaptiveThreshold(dst, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, FPT.config.opencv.blockSize, FPT.config.opencv.C);
+                    cv.imshow(canvas, dst);
+                    src.delete(); dst.delete();
+                },
+                debugFrame() {
+                    if (!FloorPlanTracker.state.cvReady) return;
+                    FloorPlanTracker.ui.showLoader('Creating debug image...');
+                    const canvas = document.createElement('canvas');
+                    this._processFrame(canvas);
+                    FloorPlanTracker.dom.debugPreview.src = canvas.toDataURL();
+                    FloorPlanTracker.dom.debugPreview.style.display = 'block';
+                    FloorPlanTracker.ui.hideLoader();
                 },
                 async scanFrame() {
                     const FPT = FloorPlanTracker;
-                    if (!FPT.state.cvReady) {
-                        alert("Image processing library not ready. Please wait.");
-                        return;
-                    }
-                    
+                    if (!FPT.state.cvReady) { alert("Image processing library not ready."); return; }
                     FPT.ui.showLoader('Processing frame...');
-
                     const canvas = document.createElement('canvas');
-                    let src = null;
-                    let dst = null;
-
                     try {
-                        const video = FPT.dom.videoStream;
-                        if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
-                        const roiWidth = video.videoWidth * 0.30;
-                        const roiHeight = video.videoHeight * 0.10;
-                        const roiX = (video.videoWidth - roiWidth) / 2;
-                        const roiY = (video.videoHeight - roiHeight) / 2;
-
-                        canvas.width = roiWidth;
-                        canvas.height = roiHeight;
-                        canvas.getContext('2d').drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
-
-                        // Use OpenCV for superior image processing
-                        src = cv.imread(canvas);
-                        dst = new cv.Mat();
-                        cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
-                        cv.adaptiveThreshold(dst, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
-                        cv.imshow(canvas, dst);
-                        
-                        const { data: { text } } = await FPT.state.worker.recognize(canvas, {}, {
+                        this._processFrame(canvas);
+                        const { data: { text } } = await FPT.state.worker.recognize(canvas, {
+                            tessedit_ocr_engine_mode: FPT.config.tesseract.engineMode,
+                        }, {
                             tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -',
                             tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE 
                         });
-
                         const firstLine = text.split('\n')[0].trim();
                         const match = firstLine.match(/[A-Za-z0-9][A-Za-z0-9 -]{2,39}/);
-
                         if (match && match[0]) {
-                            FPT.ui.hideLoader(); // Hide loader before confirm dialog
+                            FPT.ui.hideLoader();
                             const cleanText = match[0];
                             const isConfirmed = confirm(`Scanned: "${cleanText}"\n\nIs this correct?`);
-
                             if (isConfirmed) {
                                 FPT.dom.productNameInput.value = cleanText;
                                 this.stop();
                                 FPT.dom.tileLocationInput.focus();
                             } else {
-                                FPT.ui.showLoader('Scan rejected. Try again.');
-                                setTimeout(() => FPT.ui.hideLoader(), 1500);
+                                FPT.ui.showLoader('Scan rejected. Try again.'); setTimeout(() => FPT.ui.hideLoader(), 1500);
                             }
                         } else {
-                            FPT.ui.showLoader('Text not found. Try again.');
-                            setTimeout(() => FPT.ui.hideLoader(), 1500);
+                            FPT.ui.showLoader('Text not found. Try again.'); setTimeout(() => FPT.ui.hideLoader(), 1500);
                         }
                     } catch (error) {
                         console.error("OCR Error:", error);
-                        FPT.ui.showLoader('Scan failed. Please try again.');
-                        setTimeout(() => FPT.ui.hideLoader(), 1500);
-                    } finally {
-                        if (src) src.delete();
-                        if (dst) dst.delete();
+                        FPT.ui.showLoader('Scan failed. Please try again.'); setTimeout(() => FPT.ui.hideLoader(), 1500);
                     }
                 }
             }
         };
-
-        // Start the application once the DOM is fully loaded.
         window.addEventListener('DOMContentLoaded', () => FloorPlanTracker.init());
-        
     </script>
     <script>
-        // Service Worker registration (kept separate for clarity)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
-                    .then(registration => {
-                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    })
-                    .catch(err => {
-                        console.log('ServiceWorker registration failed: ', err);
-                    });
+                    .then(r => console.log('ServiceWorker registration successful'))
+                    .catch(e => console.log('ServiceWorker registration failed: ', e));
             });
         }
     </script>
