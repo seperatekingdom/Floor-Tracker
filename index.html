@@ -96,8 +96,30 @@
                 </div>
                 <div>
                     <label for="tileLocation" class="block text-sm font-medium text-slate-600 mb-1">Tile Location</label>
-                    <input type="text" id="tileLocation" placeholder="e.g., 'FF03, FF04'" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow">
-                </div>
+                    <select id="tileLocation" class="w-full px-3 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow bg-white">
+                        <option value="" disabled selected>Select a tile location...</option>
+                        <option value="FF01">FF01</option>
+                        <option value="FF02">FF02</option>
+                        <option value="FF03">FF03</option>
+                        <option value="FF04">FF04</option>
+                        <option value="FF05">FF05</option>
+                        <option value="FF06">FF06</option>
+                        <option value="FF07">FF07</option>
+                        <option value="FF08">FF08</option>
+                        <option value="FF09">FF09</option>
+                        <option value="FF10">FF10</option>
+                        <option value="FF11">FF11</option>
+                        <option value="FF12">FF12</option>
+                        <option value="FF13">FF13</option>
+                        <option value="FF14">FF14</option>
+                        <option value="FF15">FF15</option>
+                        <option value="FF16">FF16</option>
+                        <option value="FF17">FF17</option>
+                        <option value="FF18">FF18</option>
+                        <option value="FF19">FF19</option>
+                        <option value="FF20">FF20</option>
+                    </select>
+                    </div>
                 <button id="addItemBtn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all shadow-sm hover:shadow-md">Add Item</button>
             </div>
             <hr class="my-6 border-slate-200">
@@ -268,7 +290,9 @@
                         this.save();
                         this.render();
                         productNameInput.value = '';
-                        tileLocationInput.value = '';
+                        // ▼▼▼ THIS LINE WAS CHANGED TO RESET THE DROPDOWN ▼▼▼
+                        tileLocationInput.selectedIndex = 0; 
+                        // ▲▲▲ END OF CHANGED LINE ▲▲▲
                         productNameInput.focus();
                     } else {
                         addItemBtn.textContent = 'Please fill out both fields!';
