@@ -4,6 +4,10 @@ import { config } from './config.js';
 import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
+/**
+ * NEW: Processes the frame using color channel extraction for high-contrast text.
+ * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
+ */
 function _processFrame(canvas) {
     const video = dom.videoStream;
     const roiWidth = video.videoWidth * 0.30;
@@ -16,11 +20,32 @@ function _processFrame(canvas) {
 
     let src = cv.imread(canvas);
     let dst = new cv.Mat();
-    cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
-    cv.adaptiveThreshold(dst, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, config.opencv.blockSize, config.opencv.C);
+    let channelPlane = new cv.Mat();
+    
+    // 1. Create a MatVector to hold the individual color channels
+    let channels = new cv.MatVector();
+    
+    // 2. Split the source image into its R, G, B, and Alpha channels
+    cv.split(src, channels);
+    
+    // 3. Isolate the BLUE channel. For "white on red", the blue channel provides
+    //    excellent contrast (white text is bright, red background is dark).
+    //    You could also use channels.get(1) for the GREEN channel.
+    channelPlane = channels.get(2); // 0=R, 1=G, 2=B, 3=A
+    
+    // 4. Apply adaptive thresholding on ONLY the blue channel
+    cv.adaptiveThreshold(channelPlane, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, config.opencv.blockSize, config.opencv.C);
+    
+    // Note: We use THRESH_BINARY_INV here because the text (bright in the blue channel) should become black.
+    
+    // 5. Draw the final, clean black-and-white image back to the canvas
     cv.imshow(canvas, dst);
+    
+    // 6. Clean up memory
     src.delete();
     dst.delete();
+    channels.delete();
+    channelPlane.delete();
 }
 
 export async function start() {
