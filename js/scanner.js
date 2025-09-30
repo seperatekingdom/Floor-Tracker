@@ -34,7 +34,7 @@ function _processFrame(canvas) {
     channelPlane = channels.get(2); // 0=R, 1=G, 2=B, 3=A
     
     // 4. Apply adaptive thresholding on ONLY the blue channel
-    cv.adaptiveThreshold(channelPlane, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, config.opencv.blockSize, config.opencv.C);
+    cv.adaptiveThreshold(channelPlane, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, config.opencv.blockSize, config.opencv.C);
     
     // Note: We use THRESH_BINARY_INV here because the text (bright in the blue channel) should become black.
     
