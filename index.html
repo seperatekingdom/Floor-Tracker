@@ -11,7 +11,6 @@
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* All your CSS styles remain here, no changes needed */
         body { font-family: 'Inter', sans-serif; }
         .focusable-input:focus { outline: none; box-shadow: 0 0 0 2px #3b82f6; }
         #interactive { position: relative; width: 100%; height: 300px; overflow: hidden; margin: 20px 0; background-color: #333; border-radius: 12px; }
@@ -43,7 +42,7 @@
                 </div>
             </div>
             <div id="ocr-loader-live" class="absolute inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50 backdrop-blur-sm hidden">
-                <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 <p id="loader-text-live" class="mt-4 text-slate-600 font-medium">Processing frame...</p>
             </div>
         </div>
@@ -60,8 +59,8 @@
                     <input type="text" id="product-name-input" placeholder="e.g., 'Cobar Coffee Table'" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow">
                 </div>
                 <div>
-                    <label for="tile-location-input" class="block text-sm font-medium text-slate-600 mb-1">Tile Location</label>
-                    <input type="text" id="tile-location-input" placeholder="e.g., 'FF03, FF04'" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow">
+                    <label for="tile-location-select" class="block text-sm font-medium text-slate-600 mb-1">Tile Location</label>
+                    <select id="tile-location-select" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow bg-white"></select>
                 </div>
                 <button id="add-item-btn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700">Add Item</button>
             </div>
@@ -85,7 +84,6 @@
     <script type="module" src="js/main.js"></script>
 
     <script>
-        // Service Worker registration (kept separate as it's not a module)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
