@@ -34,7 +34,7 @@ export function render() {
             const removeBtn = document.createElement('button');
             removeBtn.className = 'text-red-500 hover:text-red-700 font-semibold text-xl';
             removeBtn.innerHTML = '&times;';
-            removeBtn.onclick = () => remove(index); // Modern, secure event handling
+            removeBtn.addEventListener('click', () => remove(index));
             
             el.appendChild(info);
             el.appendChild(removeBtn);
@@ -45,13 +45,14 @@ export function render() {
 
 export function add() {
     const product = dom.productNameInput.value.trim();
-    const location = dom.tileLocationInput.value.trim();
+    const location = dom.tileLocationSelect.value; 
+
     if (product && location) {
         state.items.push({ product, location });
         save();
         render();
         dom.productNameInput.value = '';
-        dom.tileLocationInput.value = '';
+        dom.tileLocationSelect.selectedIndex = 0;
         dom.productNameInput.focus();
     } else {
         dom.addItemBtn.textContent = 'Please fill out both fields!';
