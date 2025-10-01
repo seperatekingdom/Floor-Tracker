@@ -4,10 +4,6 @@ import { config } from './config.js';
 import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
-/**
- * NEW: Processes the frame using color channel extraction for high-contrast text.
- * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
- */
 function _processFrame(canvas) {
     const video = dom.videoStream;
     const roiWidth = video.videoWidth * 0.30;
@@ -20,32 +16,11 @@ function _processFrame(canvas) {
 
     let src = cv.imread(canvas);
     let dst = new cv.Mat();
-    let channelPlane = new cv.Mat();
-    
-    // 1. Create a MatVector to hold the individual color channels
-    let channels = new cv.MatVector();
-    
-    // 2. Split the source image into its R, G, B, and Alpha channels
-    cv.split(src, channels);
-    
-    // 3. Isolate the BLUE channel. For "white on red", the blue channel provides
-    //    excellent contrast (white text is bright, red background is dark).
-    //    You could also use channels.get(1) for the GREEN channel.
-    channelPlane = channels.get(2); // 0=R, 1=G, 2=B, 3=A
-    
-    // 4. Apply adaptive thresholding on ONLY the blue channel
-    cv.adaptiveThreshold(channelPlane, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, config.opencv.blockSize, config.opencv.C);
-    
-    // Note: We use THRESH_BINARY_INV here because the text (bright in the blue channel) should become black.
-    
-    // 5. Draw the final, clean black-and-white image back to the canvas
+    cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
+    cv.adaptiveThreshold(dst, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, config.opencv.blockSize, config.opencv.C);
     cv.imshow(canvas, dst);
-    
-    // 6. Clean up memory
     src.delete();
     dst.delete();
-    channels.delete();
-    channelPlane.delete();
 }
 
 export async function start() {
@@ -103,7 +78,7 @@ export async function scanFrame() {
         const { data: { text } } = await state.worker.recognize(canvas, {
             tessedit_ocr_engine_mode: config.tesseract.engineMode,
         }, {
-            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234s -',
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -',
             tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
         });
         const ocrResult = text.split('\n')[0].trim();
@@ -117,7 +92,7 @@ export async function scanFrame() {
                 if (isConfirmed) {
                     dom.productNameInput.value = bestMatch;
                     stop();
-                    dom.tileLocationInput.focus();
+                    dom.tileLocationSelect.focus();
                 } else {
                     showLoader('Scan rejected. Try again.');
                     setTimeout(hideLoader, 1500);
