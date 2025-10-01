@@ -13,40 +13,45 @@ function bindEvents() {
     dom.debugFrameBtn.addEventListener('click', scanner.debugFrame);
 }
 
-function loadOpenCV() {
+function loadScript(src) {
     return new Promise((resolve, reject) => {
-        if (window.cv) {
-            state.cvReady = true;
-            return resolve();
-        }
         const script = document.createElement('script');
-        script.src = 'https://docs.opencv.org/4.9.0/opencv.js';
+        script.src = src;
         script.async = true;
-        script.onload = () => {
-            state.cvReady = true;
-            console.log("OpenCV.js is ready.");
-            resolve();
-        };
-        script.onerror = () => reject(new Error("OpenCV.js script failed to load."));
+        script.onload = resolve;
+        script.onerror = reject;
         document.head.appendChild(script);
     });
 }
 
-async function loadMasterList() {
-    dom.scanTextBtn.disabled = true;
-    dom.scanTextBtnText.textContent = 'Loading Products...';
+async function loadMasterList(fileName) {
     try {
-        const response = await fetch('products.json');
+        const response = await fetch(fileName);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const products = await response.json();
-        state.masterProductList = products;
-        console.log(`Successfully loaded ${products.length} products.`);
-        dom.scanTextBtn.disabled = false;
-        dom.scanTextBtnText.textContent = 'Scan Product Name';
+        return await response.json();
     } catch (error) {
-        console.error("Could not load master product list:", error);
-        alert("Error: Could not load `products.json`. Please ensure it exists and is in the same directory as your HTML file.");
-        dom.scanTextBtnText.textContent = 'Error Loading Products';
+        console.error(`Could not load ${fileName}:`, error);
+        alert(`Error: Could not load ${fileName}. Please ensure it exists and is valid.`);
+        throw error;
+    }
+}
+
+function populateLocationDropdown() {
+    const { masterLocationList } = state;
+    const { tileLocationSelect } = dom;
+    tileLocationSelect.innerHTML = '';
+    if (masterLocationList && masterLocationList.length > 0) {
+        masterLocationList.forEach(location => {
+            const option = document.createElement('option');
+            option.value = location;
+            option.textContent = location;
+            tileLocationSelect.appendChild(option);
+        });
+    } else {
+        const option = document.createElement('option');
+        option.textContent = 'No locations loaded';
+        option.disabled = true;
+        tileLocationSelect.appendChild(option);
     }
 }
 
@@ -54,13 +59,25 @@ async function init() {
     itemManager.load();
     itemManager.render();
     bindEvents();
+    dom.scanTextBtn.disabled = true;
+    dom.scanTextBtnText.textContent = 'Loading Libraries...';
     try {
-        await loadOpenCV();
-        await loadMasterList();
+        await loadScript('https://docs.opencv.org/4.9.0/opencv.js');
+        state.cvReady = true;
+        console.log("OpenCV.js is ready.");
+        
+        dom.scanTextBtnText.textContent = 'Loading Data...';
+        state.masterProductList = await loadMasterList('products.json');
+        state.masterLocationList = await loadMasterList('locations.json');
+        
+        populateLocationDropdown();
+        
+        dom.scanTextBtn.disabled = false;
+        dom.scanTextBtnText.textContent = 'Scan Product Name';
     } catch (error) {
         console.error("Initialization failed:", error);
+        dom.scanTextBtnText.textContent = 'Initialization Failed';
     }
 }
 
-// Start the application once the DOM is fully loaded.
 window.addEventListener('DOMContentLoaded', init);
