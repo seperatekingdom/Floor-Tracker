@@ -31,33 +31,31 @@ function _processFrame(canvas) {
         enhanced = new cv.Mat();
         dst = new cv.Mat();
 
-        // 1. Convert to Grayscale - This makes the process color-independent.
+        // 1. Convert to Grayscale
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
         // 2. Apply a Gaussian Blur to reduce minor camera noise.
         cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0, 0, cv.BORDER_DEFAULT);
 
-        // 3. Enhance Contrast using CLAHE - A powerful technique for uneven lighting.
+        // 3. Enhance Contrast using CLAHE
         clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
         clahe.apply(blurred, enhanced);
         
-        // 4. Use Adaptive Thresholding to create a binary image.
-        // We use THRESH_BINARY_INV so the darker text becomes the white "object of interest".
+        // 4. Use Adaptive Thresholding
         cv.adaptiveThreshold(enhanced, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, config.opencv.blockSize, config.opencv.C);
 
-        // 5. Dilate the text shape. This expands the white pixels (our text) to fill any gaps or holes.
+        // 5. Dilate the text shape to fill in gaps.
         kernel = cv.Mat.ones(2, 2, cv.CV_8U);
         cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), 1);
 
-        // 6. Final Inversion. Flips the solid white text to solid black on a white background,
-        // which is the ideal format for Tesseract.
+        // 6. Final Inversion to get black text on a white background.
         cv.bitwise_not(dst, dst);
         
-        // 7. Draw the final, clean image to the canvas for processing.
+        // 7. Draw the final image to the canvas for processing.
         cv.imshow(canvas, dst);
 
     } finally {
-        // 8. Clean up all allocated memory to prevent crashes.
+        // 8. Clean up all allocated memory.
         if (src) src.delete();
         if (gray) gray.delete();
         if (blurred) blurred.delete();
@@ -83,7 +81,7 @@ export async function start() {
         if (!state.worker) {
             state.worker = await Tesseract.createWorker('eng');
         }
-    } catch (err). {
+    } catch (err) { // <<<--- THIS WAS THE LINE WITH THE TYPO. THE PERIOD IS NOW REMOVED.
         console.error("Scanner failed to start:", err);
         alert("Could not start scanner. Please ensure camera permissions are granted.");
         stop();
