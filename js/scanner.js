@@ -6,7 +6,7 @@ import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
 /**
  * Processes a video frame to isolate text for OCR.
- * This universal version uses a professional-grade pipeline to handle
+ * This version uses a professional-grade pipeline to handle
  * a wide variety of colors and lighting conditions.
  * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
  */
@@ -31,31 +31,27 @@ function _processFrame(canvas) {
         enhanced = new cv.Mat();
         dst = new cv.Mat();
 
-        // 1. Convert to Grayscale
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-        // 2. Apply a Gaussian Blur to reduce minor camera noise.
         cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0, 0, cv.BORDER_DEFAULT);
 
-        // 3. Enhance Contrast using CLAHE
         clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
         clahe.apply(blurred, enhanced);
         
-        // 4. Use Adaptive Thresholding
         cv.adaptiveThreshold(enhanced, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, config.opencv.blockSize, config.opencv.C);
 
-        // 5. Dilate the text shape to fill in gaps.
-        kernel = cv.Mat.ones(2, 2, cv.CV_8U);
-        cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), 1);
+        // --- MODIFIED SECTION ---
+        // The dilation step now uses the tunable parameters from config.js
+        const dilateConfig = config.opencv.dilation;
+        kernel = cv.Mat.ones(dilateConfig.kernelSize, dilateConfig.kernelSize, cv.CV_8U);
+        cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), dilateConfig.iterations);
+        // --- END MODIFIED SECTION ---
 
-        // 6. Final Inversion to get black text on a white background.
         cv.bitwise_not(dst, dst);
         
-        // 7. Draw the final image to the canvas for processing.
         cv.imshow(canvas, dst);
 
     } finally {
-        // 8. Clean up all allocated memory.
+        // Clean up all allocated memory to prevent crashes.
         if (src) src.delete();
         if (gray) gray.delete();
         if (blurred) blurred.delete();
@@ -66,6 +62,8 @@ function _processFrame(canvas) {
     }
 }
 
+// The rest of the file (start, stop, debugFrame, scanFrame) remains exactly the same.
+// For your convenience, the full content is provided below.
 
 export async function start() {
     showScanner();
@@ -81,7 +79,7 @@ export async function start() {
         if (!state.worker) {
             state.worker = await Tesseract.createWorker('eng');
         }
-    } catch (err) { // <<<--- THIS WAS THE LINE WITH THE TYPO. THE PERIOD IS NOW REMOVED.
+    } catch (err) {
         console.error("Scanner failed to start:", err);
         alert("Could not start scanner. Please ensure camera permissions are granted.");
         stop();
