@@ -78,14 +78,18 @@ export async function scanFrame() {
         const { data: { text } } = await state.worker.recognize(canvas, {
             tessedit_ocr_engine_mode: config.tesseract.engineMode,
         }, {
-            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -',
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234s -',
             tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
         });
+
         const ocrResult = text.split('\n')[0].trim();
+
         if (ocrResult && ocrResult.length > 3) {
             const fuse = new Fuse(state.masterProductList, config.fuse);
             const results = fuse.search(ocrResult);
+
             if (results.length > 0) {
+                // --- CASE 1: MATCH FOUND ---
                 const bestMatch = results[0].item;
                 hideLoader();
                 const isConfirmed = confirm(`Scanned: "${bestMatch}"\n\n(Corrected from: "${ocrResult}")\nIs this correct?`);
@@ -98,10 +102,23 @@ export async function scanFrame() {
                     setTimeout(hideLoader, 1500);
                 }
             } else {
-                showLoader(`No match found for "${ocrResult}"`);
-                setTimeout(hideLoader, 2000);
+                // --- CASE 2: NO MATCH FOUND (NEW LOGIC) ---
+                hideLoader();
+                const useAsIs = confirm(`No close match found for: "${ocrResult}"\n\nDo you want to add this new product name as is?`);
+                
+                if (useAsIs) {
+                    // Use the raw OCR text
+                    dom.productNameInput.value = ocrResult;
+                    stop();
+                    dom.tileLocationSelect.focus();
+                } else {
+                    // User chose not to add the new name
+                    showLoader('Scan rejected. Try again.');
+                    setTimeout(hideLoader, 1500);
+                }
             }
         } else {
+            // --- CASE 3: OCR FAILED TO FIND ANY TEXT ---
             showLoader('Text not found. Try again.');
             setTimeout(hideLoader, 1500);
         }
