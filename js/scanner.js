@@ -3,9 +3,9 @@ import { state } from './state.js';
 import { config } from './config.js';
 import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
-import Fuse from 'fuse.js'; // Assuming Fuse.js is imported if used in this module scope
-import Tesseract from 'tesseract.js'; // Assuming Tesseract is imported if used in this module scope
 
+// NOTE: We are NOT importing Fuse or Tesseract here.
+// We assume they are loaded via <script> tags in your HTML and are available globally.
 
 /**
  * Processes a video frame to isolate text for OCR.
@@ -171,6 +171,7 @@ export async function scanFrame() {
         });
         const ocrResult = text.split('\n')[0].trim();
         if (ocrResult && ocrResult.length > 3) {
+            // Assumes Fuse is available on the global window object
             const fuse = new Fuse(state.masterProductList, config.fuse);
             const results = fuse.search(ocrResult);
             if (results.length > 0) {
