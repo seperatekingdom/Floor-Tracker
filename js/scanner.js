@@ -4,6 +4,11 @@ import { config } from './config.js';
 import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
+/**
+ * Processes a video frame to isolate text for OCR.
+ * This version includes blurring and dilation to fix "hollow text".
+ * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
+ */
 function _processFrame(canvas) {
     const video = dom.videoStream;
     const roiWidth = video.videoWidth * 0.30;
@@ -14,14 +19,54 @@ function _processFrame(canvas) {
     canvas.height = roiHeight;
     canvas.getContext('2d').drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
 
-    let src = cv.imread(canvas);
-    let dst = new cv.Mat();
-    cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
-    cv.adaptiveThreshold(dst, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, config.opencv.blockSize, config.opencv.C);
-    cv.imshow(canvas, dst);
-    src.delete();
-    dst.delete();
+    // Declare all Mat objects here to ensure they are cleaned up in the 'finally' block
+    let src = null, hsv = null, mask = null, dst = null, kernel = null, low = null, high = null;
+
+    try {
+        src = cv.imread(canvas);
+        hsv = new cv.Mat();
+        mask = new cv.Mat();
+        dst = new cv.Mat();
+
+        // 1. Convert from RGB to HSV color space
+        cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
+        cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
+
+        // 2. Apply a Median Blur to reduce noise and help prevent outlining
+        cv.medianBlur(hsv, hsv, 5);
+
+        // 3. Create a mask to find the red background areas
+        low = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 100, 100, 0]);
+        high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [10, 255, 255, 255]);
+        cv.inRange(hsv, low, high, mask);
+        
+        // 4. Invert the mask to get the text shape (text is now white, background is black)
+        cv.bitwise_not(mask, dst);
+
+        // 5. DILATE the text shape. This expands the white pixels, filling in any
+        //    hollow parts of the letters.
+        kernel = cv.Mat.ones(2, 2, cv.CV_8U);
+        cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), 1);
+
+        // 6. Invert the image one last time. This turns the now-solid white text
+        //    into solid black text, ready for OCR.
+        cv.bitwise_not(dst, dst);
+        
+        // 7. Draw the final, clean image to the canvas
+        cv.imshow(canvas, dst);
+
+    } finally {
+        // 8. Clean up all allocated memory to prevent crashes
+        if (src) src.delete();
+        if (hsv) hsv.delete();
+        if (mask) mask.delete();
+        if (dst) dst.delete();
+        if (kernel) kernel.delete();
+        if (low) low.delete();
+        if (high) high.delete();
+    }
 }
+
 
 export async function start() {
     showScanner();
@@ -81,15 +126,11 @@ export async function scanFrame() {
             tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234s -',
             tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
         });
-
         const ocrResult = text.split('\n')[0].trim();
-
         if (ocrResult && ocrResult.length > 3) {
             const fuse = new Fuse(state.masterProductList, config.fuse);
             const results = fuse.search(ocrResult);
-
             if (results.length > 0) {
-                // --- CASE 1: MATCH FOUND ---
                 const bestMatch = results[0].item;
                 hideLoader();
                 const isConfirmed = confirm(`Scanned: "${bestMatch}"\n\n(Corrected from: "${ocrResult}")\nIs this correct?`);
@@ -102,23 +143,18 @@ export async function scanFrame() {
                     setTimeout(hideLoader, 1500);
                 }
             } else {
-                // --- CASE 2: NO MATCH FOUND (NEW LOGIC) ---
                 hideLoader();
                 const useAsIs = confirm(`No close match found for: "${ocrResult}"\n\nDo you want to add this new product name as is?`);
-                
                 if (useAsIs) {
-                    // Use the raw OCR text
                     dom.productNameInput.value = ocrResult;
                     stop();
                     dom.tileLocationSelect.focus();
                 } else {
-                    // User chose not to add the new name
                     showLoader('Scan rejected. Try again.');
                     setTimeout(hideLoader, 1500);
                 }
             }
         } else {
-            // --- CASE 3: OCR FAILED TO FIND ANY TEXT ---
             showLoader('Text not found. Try again.');
             setTimeout(hideLoader, 1500);
         }
