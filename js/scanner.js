@@ -4,17 +4,14 @@ import { config } from './config.js';
 import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
-// NOTE: We are NOT importing Fuse or Tesseract here.
-// We assume they are loaded via <script> tags in your HTML and are available globally.
-
 /**
  * Processes a video frame to isolate text for OCR.
- * This revised version is more robust to changing light conditions.
+ * This universal version uses a professional-grade pipeline to handle
+ * a wide variety of colors and lighting conditions.
  * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
  */
 function _processFrame(canvas) {
     const video = dom.videoStream;
-    // Keep the ROI logic, it's efficient
     const roiWidth = video.videoWidth * 0.30;
     const roiHeight = video.videoHeight * 0.10;
     const roiX = (video.videoWidth - roiWidth) / 2;
@@ -23,90 +20,51 @@ function _processFrame(canvas) {
     canvas.height = roiHeight;
     canvas.getContext('2d').drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
 
-    // Declare all Mat objects here to ensure they are cleaned up in the 'finally' block
-    let src = null, hsv = null, gray = null, mask = null, mask1 = null, mask2 = null;
-    let dst = null, kernel = null, clahe = null, hsv_planes = null, V = null;
-    // Declare Mats for HSV ranges
-    let low1 = null, high1 = null, low2 = null, high2 = null;
+    // Declare all Mat objects to ensure they are cleaned up in the 'finally' block
+    let src = null, gray = null, blurred = null, enhanced = null;
+    let dst = null, kernel = null, clahe = null;
     
     try {
         src = cv.imread(canvas);
-        hsv = new cv.Mat();
+        gray = new cv.Mat();
+        blurred = new cv.Mat();
+        enhanced = new cv.Mat();
         dst = new cv.Mat();
 
-        // 1. Convert from RGB to HSV color space
-        cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
-        cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
+        // 1. Convert to Grayscale - This makes the process color-independent.
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+        // 2. Apply a Gaussian Blur to reduce minor camera noise.
+        cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0, 0, cv.BORDER_DEFAULT);
+
+        // 3. Enhance Contrast using CLAHE - A powerful technique for uneven lighting.
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        clahe.apply(blurred, enhanced);
         
-        // 2. (NEW) Normalize brightness/contrast using CLAHE on the Value channel
-        // This makes the image much more resilient to low or uneven lighting.
-        hsv_planes = new cv.MatVector();
-        cv.split(hsv, hsv_planes);
-        V = hsv_planes.get(2); // Get the V channel
-        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8)); // clipLimit, tileGridSize
-        clahe.apply(V, V); // Apply CLAHE in-place
-        hsv_planes.set(2, V); // Put the enhanced V channel back
-        cv.merge(hsv_planes, hsv);
+        // 4. Use Adaptive Thresholding to create a binary image.
+        // We use THRESH_BINARY_INV so the darker text becomes the white "object of interest".
+        cv.adaptiveThreshold(enhanced, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, config.opencv.blockSize, config.opencv.C);
 
-        // 3. Create a mask for the red background areas.
-        // We now use more forgiving S and V values and handle the "wrap-around" hue for red.
-        
-        // Lower range (more red-pinks)
-        low1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 70, 50, 0]);
-        high1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [10, 255, 255, 255]);
-        mask1 = new cv.Mat();
-        cv.inRange(hsv, low1, high1, mask1);
-
-        // Upper range (more red-purples)
-        low2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [170, 70, 50, 0]);
-        high2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 255, 255, 255]);
-        mask2 = new cv.Mat();
-        cv.inRange(hsv, low2, high2, mask2);
-        
-        // Combine the two masks to get all reds
-        mask = new cv.Mat();
-        cv.bitwise_or(mask1, mask2, mask);
-
-        // 4. Invert the mask to get the text shape (text is now white, background is black)
-        cv.bitwise_not(mask, dst);
-
-        // 5. (NEW) Use Adaptive Thresholding for a cleaner binary image.
-        // This is much better than the simple inversion, especially with imperfect masks.
-        // Our inverted mask `dst` is already a single-channel grayscale image.
-        let temp = new cv.Mat(); // Temporary Mat for the threshold result
-        cv.adaptiveThreshold(dst, temp, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
-        dst.delete(); // delete old dst
-        dst = temp; // reassign dst
-
-        // 6. DILATE the text shape to fill in hollow parts.
+        // 5. Dilate the text shape. This expands the white pixels (our text) to fill any gaps or holes.
         kernel = cv.Mat.ones(2, 2, cv.CV_8U);
         cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), 1);
 
-        // 7. Invert the image. This turns the solid white text into solid black text
-        //    on a white background, which is ideal for Tesseract.
+        // 6. Final Inversion. Flips the solid white text to solid black on a white background,
+        // which is the ideal format for Tesseract.
         cv.bitwise_not(dst, dst);
         
-        // 8. Draw the final, clean image to the canvas
+        // 7. Draw the final, clean image to the canvas for processing.
         cv.imshow(canvas, dst);
 
     } finally {
-        // 9. Clean up all allocated memory to prevent crashes
+        // 8. Clean up all allocated memory to prevent crashes.
         if (src) src.delete();
-        if (hsv) hsv.delete();
         if (gray) gray.delete();
-        if (mask) mask.delete();
-        if (mask1) mask1.delete();
-        if (mask2) mask2.delete();
+        if (blurred) blurred.delete();
+        if (enhanced) enhanced.delete();
         if (dst) dst.delete();
         if (kernel) kernel.delete();
         if (clahe) clahe.delete();
-        if (hsv_planes) hsv_planes.delete();
-        if (V) V.delete();
-        // Clean up HSV range Mats
-        if (low1) low1.delete();
-        if (high1) high1.delete();
-        if (low2) low2.delete();
-        if (high2) high2.delete();
     }
 }
 
@@ -125,7 +83,7 @@ export async function start() {
         if (!state.worker) {
             state.worker = await Tesseract.createWorker('eng');
         }
-    } catch (err) {
+    } catch (err). {
         console.error("Scanner failed to start:", err);
         alert("Could not start scanner. Please ensure camera permissions are granted.");
         stop();
@@ -171,7 +129,6 @@ export async function scanFrame() {
         });
         const ocrResult = text.split('\n')[0].trim();
         if (ocrResult && ocrResult.length > 3) {
-            // Assumes Fuse is available on the global window object
             const fuse = new Fuse(state.masterProductList, config.fuse);
             const results = fuse.search(ocrResult);
             if (results.length > 0) {
