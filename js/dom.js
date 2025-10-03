@@ -14,6 +14,11 @@ export const dom = {
     scanFrameBtn: document.getElementById('scan-frame-btn'),
     ocrLoaderLive: document.getElementById('ocr-loader-live'),
     loaderTextLive: document.getElementById('loader-text-live'),
+    // Multi-stage debugger elements
     debugFrameBtn: document.getElementById('debug-frame-btn'),
-    debugPreview: document.getElementById('debug-preview'),
+    debugGray: document.getElementById('debug-gray'),
+    debugClahe: document.getElementById('debug-clahe'),
+    debugOtsu: document.getElementById('debug-otsu'),
+    debugDilate: document.getElementById('debug-dilate'),
+    debugFinal: document.getElementById('debug-final'),
 };
