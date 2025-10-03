@@ -6,8 +6,7 @@ import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
 /**
  * Processes a video frame to isolate text for OCR.
- * This version uses a professional-grade pipeline to handle
- * a wide variety of colors and lighting conditions.
+ * This version uses a professional-grade pipeline with Otsu's Binarization.
  * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
  */
 function _processFrame(canvas) {
@@ -31,27 +30,35 @@ function _processFrame(canvas) {
         enhanced = new cv.Mat();
         dst = new cv.Mat();
 
+        // 1. Convert to Grayscale
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0, 0, cv.BORDER_DEFAULT);
 
+        // 2. Apply a Gaussian Blur to reduce minor camera noise.
+        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+
+        // 3. Enhance Contrast using CLAHE
         clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
         clahe.apply(blurred, enhanced);
         
-        cv.adaptiveThreshold(enhanced, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, config.opencv.blockSize, config.opencv.C);
+        // --- MODIFIED STEP 4 ---
+        // Replace Adaptive Threshold with Otsu's Binarization.
+        // This is a 'smart' global threshold that's excellent after contrast correction.
+        // We use THRESH_BINARY_INV to get white text on a black background.
+        cv.threshold(enhanced, dst, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-        // --- MODIFIED SECTION ---
-        // The dilation step now uses the tunable parameters from config.js
+        // 5. Dilate the text shape. With Otsu's, this might only need a small kernel.
         const dilateConfig = config.opencv.dilation;
         kernel = cv.Mat.ones(dilateConfig.kernelSize, dilateConfig.kernelSize, cv.CV_8U);
         cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), dilateConfig.iterations);
-        // --- END MODIFIED SECTION ---
 
+        // 6. Final Inversion to get black text on a white background for Tesseract.
         cv.bitwise_not(dst, dst);
         
+        // 7. Draw the final image to the canvas.
         cv.imshow(canvas, dst);
 
     } finally {
-        // Clean up all allocated memory to prevent crashes.
+        // 8. Clean up all allocated memory.
         if (src) src.delete();
         if (gray) gray.delete();
         if (blurred) blurred.delete();
@@ -62,9 +69,8 @@ function _processFrame(canvas) {
     }
 }
 
-// The rest of the file (start, stop, debugFrame, scanFrame) remains exactly the same.
-// For your convenience, the full content is provided below.
 
+// The rest of the file (start, stop, debugFrame, scanFrame) remains the same.
 export async function start() {
     showScanner();
     showLoader('Initializing camera...');
