@@ -15,7 +15,7 @@ export const config = {
             // The size of the 'brush' used to thicken the text outlines.
             // Increase this number to make the fill effect stronger.
             // Good values to test are 2, 3, or 4.
-            kernelSize: 5, 
+            kernelSize: 6, 
 
             // How many times to apply the dilation. 1 is usually enough.
             // Try 2 for a very strong effect if kernelSize isn't enough.
