@@ -19,7 +19,7 @@ export const config = {
 
             // How many times to apply the dilation. 1 is usually enough.
             // Try 2 for a very strong effect if kernelSize isn't enough.
-            iterations: 1,
+            iterations: 2,
         }
     },
     tesseract: {
