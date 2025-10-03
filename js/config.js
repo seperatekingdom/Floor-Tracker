@@ -1,19 +1,16 @@
 // js/config.js
 export const config = {
     opencv: {
-        /*
-        // These parameters are for adaptiveThreshold, which we are no longer using.
-        // They are kept here in case you want to experiment with it again later.
-        blockSize: 15,
-        C: 5,
-        */
-
-        // Dilation settings to fill in "hollow" text.
-        // With the new Otsu method, you can likely reduce this. Start with 2.
+        // Dilation settings
         dilation: {
-            kernelSize: 2, 
+            kernelSize: 3, 
             iterations: 1,
-        }
+        },
+
+        // NEW: Inversion Switch
+        // Set to 'true' to get the standard black-on-white image.
+        // Set to 'false' to get the inverted white-on-black image.
+        invertFinal: true, // Let's start with true as our first test
     },
     tesseract: {
         engineMode: Tesseract.OEM.LSTM_ONLY,
