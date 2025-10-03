@@ -1,22 +1,25 @@
 // js/config.js
 export const config = {
     opencv: {
-        // Dilation settings
+        // Dilation settings to fill in "hollow" text.
         dilation: {
-            kernelSize: 3, 
+            kernelSize: 3,
             iterations: 1,
         },
 
-        // NEW: Inversion Switch
-        // Set to 'true' to get the standard black-on-white image.
-        // Set to 'false' to get the inverted white-on-black image.
-        invertFinal: false, // Let's start with true as our first test
+        // Inversion Switch. 'false' gives the white-on-black image.
+        invertFinal: false,
     },
+
     tesseract: {
+        // Engine Mode: Tesseract's OCR model.
         engineMode: Tesseract.OEM.LSTM_ONLY,
     },
+
     fuse: {
+        // Fuzzy search settings.
         includeScore: true,
         threshold: 0.6,
     }
 };
+
