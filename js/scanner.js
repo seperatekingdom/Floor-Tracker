@@ -1,77 +1,106 @@
-// js/scanner.js (FINAL DIAGNOSTIC - "Hello, OpenCV" Test)
+// js/scanner.js (FINAL STABLE - Pure JavaScript Pipeline)
 import { state } from './state.js';
 import { config } from './config.js';
 import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
 /**
- * The simplest possible test to see if core OpenCV functions are working.
+ * Processes a video frame using a stable, Pure JavaScript pipeline.
+ * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
  */
 function _processFrame(canvas) {
-    console.log("--- Running 'Hello, OpenCV' Test ---");
-    let blankImage = null;
+    const video = dom.videoStream;
+    const roiWidth = video.videoWidth * 0.30;
+    const roiHeight = video.videoHeight * 0.10;
+    const roiX = (video.videoWidth - roiWidth) / 2;
+    const roiY = (video.videoHeight - roiHeight) / 2;
+    canvas.width = roiWidth;
+    canvas.height = roiHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    // This loop converts to grayscale and applies a simple threshold.
+    // This produces a black-on-white image for dark text, and a white-on-black for light text.
+    for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        const color = avg > 128 ? 255 : 0; // Simple threshold
+        data[i] = data[i+1] = data[i+2] = color;
+    }
+
+    // Conditionally invert the image based on the config.
+    // This is for handling light text on dark backgrounds.
+    if (!config.pre_processing.invertFinal) {
+        for (let i = 0; i < data.length; i += 4) {
+            const color = data[i] === 255 ? 0 : 255;
+            data[i] = data[i+1] = data[i+2] = color;
+        }
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+}
+
+export async function start() {
+    showScanner();
+    showLoader('Initializing camera...');
     try {
-        // We are NOT reading from the video.
-        // We are creating a simple 100x50 black rectangle from scratch.
-        blankImage = new cv.Mat(50, 100, cv.CV_8UC4, new cv.Scalar(0, 0, 0, 255));
-        
-        // We are trying to display this simple black rectangle.
-        cv.imshow(canvas, blankImage);
-
-        console.log("'Hello, OpenCV' Test SUCCEEDED.");
-
+        state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        dom.videoStream.srcObject = state.stream;
+        dom.videoStream.onloadedmetadata = () => {
+            dom.videoStream.play();
+            hideLoader();
+        };
+        if (!state.worker) {
+            state.worker = await Tesseract.createWorker('eng');
+        }
     } catch (err) {
-        console.error("'Hello, OpenCV' Test FAILED:", err);
-        throw err; // Re-throw the error to trigger the alert in debugFrame
-    } finally {
-        if (blankImage) blankImage.delete();
+        console.error("Scanner failed to start:", err);
+        alert("Could not start scanner. Please ensure camera permissions are granted.");
+        stop();
     }
 }
 
-
-// The rest of the file is unchanged.
-export async function start() {
-    showScanner(); showLoader('Initializing camera...');
-    try {
-        if (!state.cvReady) throw new Error("OpenCV.js is not ready.");
-        state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        dom.videoStream.srcObject = state.stream;
-        dom.videoStream.onloadedmetadata = () => { dom.videoStream.play(); hideLoader(); };
-        if (!state.worker) { state.worker = await Tesseract.createWorker('eng'); }
-    } catch (err) { console.error("Scanner failed to start:", err); alert("Could not start scanner. Please ensure camera permissions are granted."); stop(); }
-}
-
 export function stop() {
-    if (state.stream) { state.stream.getTracks().forEach(track => track.stop()); state.stream = null; }
-    if (state.worker) { state.worker.terminate(); state.worker = null; }
+    if (state.stream) {
+        state.stream.getTracks().forEach(track => track.stop());
+        state.stream = null;
+    }
+    if (state.worker) {
+        state.worker.terminate();
+        state.worker = null;
+    }
     hideScanner();
 }
 
 export function debugFrame() {
-    if (!state.cvReady) return;
     showLoader('Creating debug image...');
     const canvas = document.createElement('canvas');
     try {
         _processFrame(canvas);
-        // We now set the debug preview's src to the result of the test.
         dom.debugPreview.src = canvas.toDataURL();
         dom.debugPreview.style.display = 'block';
     } catch(err) {
         console.error("Error during debugFrame:", err);
-        alert("An error occurred while creating the debug image. Check the console if possible.");
+        alert("An error occurred while creating the debug image.");
     } finally {
         hideLoader();
     }
 }
 
 export async function scanFrame() {
-    // Note: scanFrame will also show the black rectangle for this test.
-    if (!state.cvReady) { alert("Image processing library not ready."); return; }
-    showLoader('Processing frame...'); const canvas = document.createElement('canvas');
+    showLoader('Processing frame...');
+    const canvas = document.createElement('canvas');
     try {
         _processFrame(canvas);
         const engineModeValue = Tesseract.OEM[config.tesseract.engineMode];
-        const { data: { text } } = await state.worker.recognize(canvas, { tessedit_ocr_engine_mode: engineModeValue, }, { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234s -', tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE });
+        const { data: { text } } = await state.worker.recognize(canvas, {
+            tessedit_ocr_engine_mode: engineModeValue,
+        }, {
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234s -',
+            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
+        });
         const ocrResult = text.split('\n')[0].trim();
         if (ocrResult && ocrResult.length > 3) {
             const fuse = new Fuse(state.masterProductList, config.fuse);
