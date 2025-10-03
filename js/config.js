@@ -1,4 +1,4 @@
-// js/config.js
+// js/config.js (Bulletproof Version)
 export const config = {
     opencv: {
         // Dilation settings to fill in "hollow" text.
@@ -12,8 +12,10 @@ export const config = {
     },
 
     tesseract: {
-        // Engine Mode: Tesseract's OCR model.
-        engineMode: Tesseract.OEM.LSTM_ONLY,
+        // Use a simple string to avoid dependency issues on load.
+        // The scanner.js file will handle converting this to the correct Tesseract value.
+        // Valid options: 'LSTM_ONLY', 'TESSERACT_ONLY', 'TESSERACT_LSTM_COMBINED'
+        engineMode: 'LSTM_ONLY',
     },
 
     fuse: {
@@ -22,4 +24,3 @@ export const config = {
         threshold: 0.6,
     }
 };
-
