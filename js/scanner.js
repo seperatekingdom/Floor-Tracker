@@ -1,78 +1,48 @@
-// js/scanner.js
+// js/scanner.js (MULTI-STAGE DEBUGGER VERSION)
 import { state } from './state.js';
 import { config } from './config.js';
 import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
-/**
- * Processes a video frame using Otsu's Binarization and ensures the final
- * output is black text on a white background.
- * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
- */
+// This is the main processing pipeline for the actual scan
 function _processFrame(canvas) {
     const video = dom.videoStream;
     const roiWidth = video.videoWidth * 0.30;
     const roiHeight = video.videoHeight * 0.10;
     const roiX = (video.videoWidth - roiWidth) / 2;
     const roiY = (video.videoHeight - roiHeight) / 2;
-    canvas.width = roiWidth;
-    canvas.height = roiHeight;
+    canvas.width = roiWidth; canvas.height = roiHeight;
     canvas.getContext('2d').drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
 
-    // Declare all Mat objects to ensure they are cleaned up in the 'finally' block
     let src = null, gray = null, blurred = null, enhanced = null;
     let dst = null, kernel = null, clahe = null;
     
     try {
-        src = cv.imread(canvas);
-        gray = new cv.Mat();
-        blurred = new cv.Mat();
-        enhanced = new cv.Mat();
-        dst = new cv.Mat();
-
-        // 1. Convert to Grayscale
+        src = cv.imread(canvas); gray = new cv.Mat(); blurred = new cv.Mat();
+        enhanced = new cv.Mat(); dst = new cv.Mat();
+        
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-        // 2. Apply a moderate Gaussian Blur to reduce noise.
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
-
-        // 3. Enhance Contrast using CLAHE
+        
         clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
         clahe.apply(blurred, enhanced);
         
-        // 4. Use Otsu's Binarization. This creates a clean but INVERTED image
-        //    (white text on a black background).
         cv.threshold(enhanced, dst, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-
-        // 5. Dilate the white text to make it more solid.
+        
         const dilateConfig = config.opencv.dilation;
         kernel = cv.Mat.ones(dilateConfig.kernelSize, dilateConfig.kernelSize, cv.CV_8U);
         cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), dilateConfig.iterations);
-
-        // -------------------------------------------------------------------
-        // 6. FINAL INVERSION - THIS IS THE CRITICAL FIX
-        // This flips the image from white-on-black to the black-on-white
-        // format that Tesseract needs.
-        cv.bitwise_not(dst, dst);
-        // -------------------------------------------------------------------
         
-        // 7. Draw the final, correct image to the canvas.
+        cv.bitwise_not(dst, dst);
+        
         cv.imshow(canvas, dst);
-
     } finally {
-        // 8. Clean up all allocated memory.
-        if (src) src.delete();
-        if (gray) gray.delete();
-        if (blurred) blurred.delete();
-        if (enhanced) enhanced.delete();
-        if (dst) dst.delete();
-        if (kernel) kernel.delete();
+        if (src) src.delete(); if (gray) gray.delete(); if (blurred) blurred.delete();
+        if (enhanced) enhanced.delete(); if (dst) dst.delete(); if (kernel) kernel.delete();
         if (clahe) clahe.delete();
     }
 }
 
-
-// The rest of the file (start, stop, debugFrame, scanFrame) remains exactly the same.
 export async function start() {
     showScanner();
     showLoader('Initializing camera...');
@@ -80,92 +50,101 @@ export async function start() {
         if (!state.cvReady) throw new Error("OpenCV.js is not ready.");
         state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         dom.videoStream.srcObject = state.stream;
-        dom.videoStream.onloadedmetadata = () => {
-            dom.videoStream.play();
-            hideLoader();
-        };
-        if (!state.worker) {
-            state.worker = await Tesseract.createWorker('eng');
-        }
-    } catch (err) {
-        console.error("Scanner failed to start:", err);
-        alert("Could not start scanner. Please ensure camera permissions are granted.");
-        stop();
-    }
+        dom.videoStream.onloadedmetadata = () => { dom.videoStream.play(); hideLoader(); };
+        if (!state.worker) { state.worker = await Tesseract.createWorker('eng'); }
+    } catch (err) { console.error("Scanner failed to start:", err); alert("Could not start scanner. Please ensure camera permissions are granted."); stop(); }
 }
 
 export function stop() {
-    if (state.stream) {
-        state.stream.getTracks().forEach(track => track.stop());
-        state.stream = null;
-    }
-    if (state.worker) {
-        state.worker.terminate();
-        state.worker = null;
-    }
+    if (state.stream) { state.stream.getTracks().forEach(track => track.stop()); state.stream = null; }
+    if (state.worker) { state.worker.terminate(); state.worker = null; }
     hideScanner();
 }
 
+/**
+ * NEW: Multi-stage debug function to visualize the entire pipeline.
+ */
 export function debugFrame() {
     if (!state.cvReady) return;
-    showLoader('Creating debug image...');
-    const canvas = document.createElement('canvas');
-    _processFrame(canvas);
-    dom.debugPreview.src = canvas.toDataURL();
-    dom.debugPreview.style.display = 'block';
-    hideLoader();
+    showLoader('Running multi-stage debug...');
+
+    const tempCanvas = document.createElement('canvas');
+    const show = (mat, element) => {
+        cv.imshow(tempCanvas, mat);
+        element.src = tempCanvas.toDataURL();
+    };
+
+    const video = dom.videoStream;
+    const roiWidth = video.videoWidth * 0.30;
+    const roiHeight = video.videoHeight * 0.10;
+    const roiX = (video.videoWidth - roiWidth) / 2;
+    const roiY = (video.videoHeight - roiHeight) / 2;
+    const mainCanvas = document.createElement('canvas');
+    mainCanvas.width = roiWidth; mainCanvas.height = roiHeight;
+    mainCanvas.getContext('2d').drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
+
+    let src = null, gray = null, enhanced = null;
+    let otsu_inv = null, dilated = null, final = null;
+    let kernel = null, clahe = null;
+
+    try {
+        src = cv.imread(mainCanvas);
+        gray = new cv.Mat(); enhanced = new cv.Mat();
+        otsu_inv = new cv.Mat(); dilated = new cv.Mat(); final = new cv.Mat();
+
+        // Step 1: Grayscale
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        show(gray, dom.debugGray);
+
+        // Step 2: CLAHE
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        clahe.apply(gray, enhanced);
+        show(enhanced, dom.debugClahe);
+
+        // Step 3: Otsu's Threshold (INV)
+        cv.threshold(enhanced, otsu_inv, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+        show(otsu_inv, dom.debugOtsu);
+        
+        // Step 4: Dilation
+        const dilateConfig = config.opencv.dilation;
+        kernel = cv.Mat.ones(dilateConfig.kernelSize, dilateConfig.kernelSize, cv.CV_8U);
+        cv.dilate(otsu_inv, dilated, kernel, new cv.Point(-1, -1), dilateConfig.iterations);
+        show(dilated, dom.debugDilate);
+
+        // Step 5: Final Inversion
+        cv.bitwise_not(dilated, final);
+        show(final, dom.debugFinal);
+
+    } catch (error) {
+        console.error("Error during multi-stage debug:", error);
+    } finally {
+        if (src) src.delete(); if (gray) gray.delete();
+        if (enhanced) enhanced.delete(); if (otsu_inv) otsu_inv.delete();
+        if (dilated) dilated.delete(); if (final) final.delete();
+        if (kernel) kernel.delete(); if (clahe) clahe.delete();
+        hideLoader();
+    }
 }
 
 export async function scanFrame() {
-    if (!state.cvReady) {
-        alert("Image processing library not ready.");
-        return;
-    }
-    showLoader('Processing frame...');
-    const canvas = document.createElement('canvas');
+    if (!state.cvReady) { alert("Image processing library not ready."); return; }
+    showLoader('Processing frame...'); const canvas = document.createElement('canvas');
     try {
         _processFrame(canvas);
-        const { data: { text } } = await state.worker.recognize(canvas, {
-            tessedit_ocr_engine_mode: config.tesseract.engineMode,
-        }, {
-            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234s -',
-            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
-        });
+        const { data: { text } } = await state.worker.recognize(canvas, { tessedit_ocr_engine_mode: config.tesseract.engineMode, }, { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234s -', tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE });
         const ocrResult = text.split('\n')[0].trim();
         if (ocrResult && ocrResult.length > 3) {
             const fuse = new Fuse(state.masterProductList, config.fuse);
             const results = fuse.search(ocrResult);
             if (results.length > 0) {
-                const bestMatch = results[0].item;
-                hideLoader();
+                const bestMatch = results[0].item; hideLoader();
                 const isConfirmed = confirm(`Scanned: "${bestMatch}"\n\n(Corrected from: "${ocrResult}")\nIs this correct?`);
-                if (isConfirmed) {
-                    dom.productNameInput.value = bestMatch;
-                    stop();
-                    dom.tileLocationSelect.focus();
-                } else {
-                    showLoader('Scan rejected. Try again.');
-                    setTimeout(hideLoader, 1500);
-                }
+                if (isConfirmed) { dom.productNameInput.value = bestMatch; stop(); dom.tileLocationSelect.focus(); } else { showLoader('Scan rejected. Try again.'); setTimeout(hideLoader, 1500); }
             } else {
                 hideLoader();
                 const useAsIs = confirm(`No close match found for: "${ocrResult}"\n\nDo you want to add this new product name as is?`);
-                if (useAsIs) {
-                    dom.productNameInput.value = ocrResult;
-                    stop();
-                    dom.tileLocationSelect.focus();
-                } else {
-                    showLoader('Scan rejected. Try again.');
-                    setTimeout(hideLoader, 1500);
-                }
+                if (useAsIs) { dom.productNameInput.value = ocrResult; stop(); dom.tileLocationSelect.focus(); } else { showLoader('Scan rejected. Try again.'); setTimeout(hideLoader, 1500); }
             }
-        } else {
-            showLoader('Text not found. Try again.');
-            setTimeout(hideLoader, 1500);
-        }
-    } catch (error) {
-        console.error("OCR Error:", error);
-        showLoader('Scan failed. Please try again.');
-        setTimeout(hideLoader, 1500);
-    }
+        } else { showLoader('Text not found. Try again.'); setTimeout(hideLoader, 1500); }
+    } catch (error) { console.error("OCR Error:", error); showLoader('Scan failed. Please try again.'); setTimeout(hideLoader, 1500); }
 }
