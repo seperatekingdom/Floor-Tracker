@@ -1,10 +1,9 @@
-// js/scanner.js (MULTI-STAGE DEBUGGER VERSION)
+// js/scanner.js (DEFINITIVE FIX - Friday 1:15 PM)
 import { state } from './state.js';
 import { config } from './config.js';
 import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
-// This is the main processing pipeline for the actual scan
 function _processFrame(canvas) {
     const video = dom.videoStream;
     const roiWidth = video.videoWidth * 0.30;
@@ -33,7 +32,9 @@ function _processFrame(canvas) {
         kernel = cv.Mat.ones(dilateConfig.kernelSize, dilateConfig.kernelSize, cv.CV_8U);
         cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), dilateConfig.iterations);
         
-        cv.bitwise_not(dst, dst);
+        // --- THE FINAL FIX ---
+        // We are replacing the faulty cv.bitwise_not() with a reliable inversion using cv.threshold().
+        cv.threshold(dst, dst, 127, 255, cv.THRESH_BINARY_INV);
         
         cv.imshow(canvas, dst);
     } finally {
@@ -44,8 +45,7 @@ function _processFrame(canvas) {
 }
 
 export async function start() {
-    showScanner();
-    showLoader('Initializing camera...');
+    showScanner(); showLoader('Initializing camera...');
     try {
         if (!state.cvReady) throw new Error("OpenCV.js is not ready.");
         state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -61,66 +61,43 @@ export function stop() {
     hideScanner();
 }
 
-/**
- * NEW: Multi-stage debug function to visualize the entire pipeline.
- */
 export function debugFrame() {
     if (!state.cvReady) return;
     showLoader('Running multi-stage debug...');
 
     const tempCanvas = document.createElement('canvas');
-    const show = (mat, element) => {
-        cv.imshow(tempCanvas, mat);
-        element.src = tempCanvas.toDataURL();
-    };
+    const show = (mat, element) => { cv.imshow(tempCanvas, mat); element.src = tempCanvas.toDataURL(); };
 
     const video = dom.videoStream;
-    const roiWidth = video.videoWidth * 0.30;
-    const roiHeight = video.videoHeight * 0.10;
-    const roiX = (video.videoWidth - roiWidth) / 2;
-    const roiY = (video.videoHeight - roiHeight) / 2;
+    const roiWidth = video.videoWidth * 0.30; const roiHeight = video.videoHeight * 0.10;
+    const roiX = (video.videoWidth - roiWidth) / 2; const roiY = (video.videoHeight - roiHeight) / 2;
     const mainCanvas = document.createElement('canvas');
     mainCanvas.width = roiWidth; mainCanvas.height = roiHeight;
     mainCanvas.getContext('2d').drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
 
-    let src = null, gray = null, enhanced = null;
-    let otsu_inv = null, dilated = null, final = null;
+    let src = null, gray = null, enhanced = null, otsu_inv = null, dilated = null, final = null;
     let kernel = null, clahe = null;
 
     try {
-        src = cv.imread(mainCanvas);
-        gray = new cv.Mat(); enhanced = new cv.Mat();
+        src = cv.imread(mainCanvas); gray = new cv.Mat(); enhanced = new cv.Mat();
         otsu_inv = new cv.Mat(); dilated = new cv.Mat(); final = new cv.Mat();
 
-        // Step 1: Grayscale
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        show(gray, dom.debugGray);
-
-        // Step 2: CLAHE
-        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-        clahe.apply(gray, enhanced);
-        show(enhanced, dom.debugClahe);
-
-        // Step 3: Otsu's Threshold (INV)
-        cv.threshold(enhanced, otsu_inv, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-        show(otsu_inv, dom.debugOtsu);
-        
-        // Step 4: Dilation
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY); show(gray, dom.debugGray);
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8)); clahe.apply(gray, enhanced); show(enhanced, dom.debugClahe);
+        cv.threshold(enhanced, otsu_inv, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU); show(otsu_inv, dom.debugOtsu);
         const dilateConfig = config.opencv.dilation;
         kernel = cv.Mat.ones(dilateConfig.kernelSize, dilateConfig.kernelSize, cv.CV_8U);
-        cv.dilate(otsu_inv, dilated, kernel, new cv.Point(-1, -1), dilateConfig.iterations);
-        show(dilated, dom.debugDilate);
-
-        // Step 5: Final Inversion
-        cv.bitwise_not(dilated, final);
+        cv.dilate(otsu_inv, dilated, kernel, new cv.Point(-1, -1), dilateConfig.iterations); show(dilated, dom.debugDilate);
+        
+        // Using the new reliable inversion method for the final debug step
+        cv.threshold(dilated, final, 127, 255, cv.THRESH_BINARY_INV);
         show(final, dom.debugFinal);
 
     } catch (error) {
         console.error("Error during multi-stage debug:", error);
     } finally {
-        if (src) src.delete(); if (gray) gray.delete();
-        if (enhanced) enhanced.delete(); if (otsu_inv) otsu_inv.delete();
-        if (dilated) dilated.delete(); if (final) final.delete();
+        if (src) src.delete(); if (gray) gray.delete(); if (enhanced) enhanced.delete();
+        if (otsu_inv) otsu_inv.delete(); if (dilated) dilated.delete(); if (final) final.delete();
         if (kernel) kernel.delete(); if (clahe) clahe.delete();
         hideLoader();
     }
