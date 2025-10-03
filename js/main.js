@@ -1,4 +1,4 @@
-// js/main.js
+// js/main.js (Simplified - No OpenCV)
 import { state } from './state.js';
 import { dom } from './dom.js';
 import * as itemManager from './itemManager.js';
@@ -11,17 +11,6 @@ function bindEvents() {
     dom.scanFrameBtn.addEventListener('click', scanner.scanFrame);
     dom.cancelScanBtn.addEventListener('click', scanner.stop);
     dom.debugFrameBtn.addEventListener('click', scanner.debugFrame);
-}
-
-function loadScript(src) {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        script.async = true;
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-    });
 }
 
 async function loadMasterList(fileName) {
@@ -60,13 +49,8 @@ async function init() {
     itemManager.render();
     bindEvents();
     dom.scanTextBtn.disabled = true;
-    dom.scanTextBtnText.textContent = 'Loading Libraries...';
+    dom.scanTextBtnText.textContent = 'Loading Data...';
     try {
-        await loadScript('https://docs.opencv.org/4.9.0/opencv.js');
-        state.cvReady = true;
-        console.log("OpenCV.js is ready.");
-        
-        dom.scanTextBtnText.textContent = 'Loading Data...';
         state.masterProductList = await loadMasterList('products.json');
         state.masterLocationList = await loadMasterList('locations.json');
         
