@@ -5,8 +5,8 @@ import { dom } from './dom.js';
 import { showLoader, hideLoader, showScanner, hideScanner } from './ui.js';
 
 /**
- * Processes a video frame to isolate text for OCR.
- * This version uses a professional-grade pipeline with Otsu's Binarization.
+ * Processes a video frame using Otsu's Binarization and ensures the final
+ * output is black text on a white background.
  * @param {HTMLCanvasElement} canvas The canvas to draw the processed image onto.
  */
 function _processFrame(canvas) {
@@ -33,28 +33,30 @@ function _processFrame(canvas) {
         // 1. Convert to Grayscale
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-        // 2. Apply a Gaussian Blur to reduce minor camera noise.
+        // 2. Apply a moderate Gaussian Blur to reduce noise.
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
 
         // 3. Enhance Contrast using CLAHE
         clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
         clahe.apply(blurred, enhanced);
         
-        // --- MODIFIED STEP 4 ---
-        // Replace Adaptive Threshold with Otsu's Binarization.
-        // This is a 'smart' global threshold that's excellent after contrast correction.
-        // We use THRESH_BINARY_INV to get white text on a black background.
+        // 4. Use Otsu's Binarization. This creates a clean but INVERTED image
+        //    (white text on a black background).
         cv.threshold(enhanced, dst, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-        // 5. Dilate the text shape. With Otsu's, this might only need a small kernel.
+        // 5. Dilate the white text to make it more solid.
         const dilateConfig = config.opencv.dilation;
         kernel = cv.Mat.ones(dilateConfig.kernelSize, dilateConfig.kernelSize, cv.CV_8U);
         cv.dilate(dst, dst, kernel, new cv.Point(-1, -1), dilateConfig.iterations);
 
-        // 6. Final Inversion to get black text on a white background for Tesseract.
+        // -------------------------------------------------------------------
+        // 6. FINAL INVERSION - THIS IS THE CRITICAL FIX
+        // This flips the image from white-on-black to the black-on-white
+        // format that Tesseract needs.
         cv.bitwise_not(dst, dst);
+        // -------------------------------------------------------------------
         
-        // 7. Draw the final image to the canvas.
+        // 7. Draw the final, correct image to the canvas.
         cv.imshow(canvas, dst);
 
     } finally {
@@ -70,7 +72,7 @@ function _processFrame(canvas) {
 }
 
 
-// The rest of the file (start, stop, debugFrame, scanFrame) remains the same.
+// The rest of the file (start, stop, debugFrame, scanFrame) remains exactly the same.
 export async function start() {
     showScanner();
     showLoader('Initializing camera...');
