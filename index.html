@@ -36,9 +36,15 @@
                     <button id="debug-frame-btn" class="w-full bg-orange-500 text-white font-semibold py-3 px-4 rounded-lg hover:bg-orange-600">Debug Frame</button>
                     <button id="cancel-scan-btn" class="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-red-700">Cancel</button>
                 </div>
-                <div class="mt-4 text-center">
-                    <p class="text-sm text-slate-500">Debug Preview:</p>
-                    <img id="debug-preview" class="mt-2 border-2 border-slate-300 mx-auto" style="display: none; max-width: 100%;">
+                <div class="mt-2 text-center">
+                    <p class="text-sm text-slate-500">Multi-Stage Debug Preview:</p>
+                    <div id="multi-debug-container" class="grid grid-cols-3 gap-2 mt-1 text-xs">
+                        <div><p>1. Grayscale</p><img id="debug-gray" class="border"></div>
+                        <div><p>2. CLAHE</p><img id="debug-clahe" class="border"></div>
+                        <div><p>3. Otsu</p><img id="debug-otsu" class="border"></div>
+                        <div><p>4. Dilate</p><img id="debug-dilate" class="border"></div>
+                        <div><p>5. Final</p><img id="debug-final" class="border"></div>
+                    </div>
                 </div>
             </div>
             <div id="ocr-loader-live" class="absolute inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50 backdrop-blur-sm hidden">
@@ -49,18 +55,18 @@
 
         <main class="bg-white p-6 rounded-2xl shadow-md flex-grow">
             <div class="space-y-4">
-                <button id="scan-text-btn" class="w-full border-2 border-dashed border-slate-300 text-slate-500 font-semibold py-3 px-4 rounded-lg hover:bg-slate-100 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all flex items-center justify-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-camera"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                <button id="scan-text-btn" class="w-full border-2 border-dashed border-slate-300 text-slate-500 font-semibold py-3 px-4 rounded-lg hover:bg-slate-100 hover:border-slate-400 flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
                     <span id="scan-text-btn-text">Scan Product Name</span>
                 </button>
                 <div class="relative flex items-center justify-center"><hr class="w-full border-slate-200"><span class="absolute px-2 bg-white text-slate-400 text-sm">OR</span></div>
                 <div>
                     <label for="product-name-input" class="block text-sm font-medium text-slate-600 mb-1">Enter Product Name Manually</label>
-                    <input type="text" id="product-name-input" placeholder="e.g., 'Cobar Coffee Table'" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow">
+                    <input type="text" id="product-name-input" placeholder="e.g., 'Cobar Coffee Table'" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
                 </div>
                 <div>
                     <label for="tile-location-select" class="block text-sm font-medium text-slate-600 mb-1">Tile Location</label>
-                    <select id="tile-location-select" class="w-full px-4 py-2 border border-slate-300 rounded-lg focusable-input transition-shadow bg-white"></select>
+                    <select id="tile-location-select" class="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white"></select>
                 </div>
                 <button id="add-item-btn" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700">Add Item</button>
             </div>
